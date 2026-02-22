@@ -11,6 +11,7 @@ enum class Screen {
     STORAGE_DETAIL,
     NETWORK,
     SYSTEM_INFO,
+    QR_CODE,
     REGISTRATION,
     SCREEN_COUNT
 };
@@ -43,11 +44,13 @@ private:
     void drawNetwork(BLEMonitorClient& ble);
     void drawSystemInfo(BLEMonitorClient& ble);
     void drawRegistration(BLEMonitorClient& ble);
+    void drawQrCodeScreen(BLEMonitorClient& ble);
     void drawDisconnected(BLEMonitorClient& ble);
 
     // Drawing helpers
     void drawProgressBar(int x, int y, int w, int h, float percent, uint16_t color);
     void drawKeyValue(int x, int y, const char* key, const char* value, uint16_t valueColor = COLOR_TEXT);
     void drawScreenTitle(const char* title);
+    void drawSingleQr(int x, int y, const char* text, const char* label);
     uint16_t getUsageColor(float percent);
 };
