@@ -3,7 +3,60 @@
 
 void UI::init() {
     M5.Lcd.fillScreen(COLOR_BG);
+    loadSettings();
     needsFullRedraw = true;
+}
+
+void UI::loadSettings() {
+    uiPrefs.begin("ui", true);  // read-only
+    soundEnabled = uiPrefs.getBool("sound", true);
+    uiPrefs.end();
+}
+
+void UI::saveSettings() {
+    uiPrefs.begin("ui", false);
+    uiPrefs.putBool("sound", soundEnabled);
+    uiPrefs.end();
+}
+
+void UI::playTone(int freq, int duration) {
+    if (!soundEnabled) return;
+    M5.Speaker.tone(freq, duration);
+}
+
+void UI::onBleConnected() {
+    playTone(TONE_BLE_CONNECT, TONE_DURATION);
+}
+
+void UI::onBleDisconnected() {
+    playTone(TONE_BLE_DISCONNECT, TONE_DURATION);
+}
+
+void UI::checkAlerts(BLEMonitorClient& ble) {
+    if (!soundEnabled || !ble.isConnected()) return;
+    unsigned long now = millis();
+    auto cpu = ble.getCpuInfo();
+    auto mem = ble.getMemoryInfo();
+    auto st = ble.getStorageInfo();
+
+    if (cpu.usage >= ALERT_CPU_USAGE && (now - lastAlertCpu > ALERT_COOLDOWN)) {
+        playTone(TONE_ALERT, TONE_DURATION);
+        lastAlertCpu = now;
+    }
+    if (cpu.temp >= ALERT_CPU_TEMP && (now - lastAlertTemp > ALERT_COOLDOWN)) {
+        playTone(TONE_ALERT, TONE_DURATION);
+        lastAlertTemp = now;
+    }
+    float ramPct = mem.ramTotal > 0 ? (float)mem.ramUsed / mem.ramTotal * 100.0f : 0;
+    if (ramPct >= ALERT_RAM_USAGE && (now - lastAlertRam > ALERT_COOLDOWN)) {
+        playTone(TONE_ALERT, TONE_DURATION);
+        lastAlertRam = now;
+    }
+    float stPct = st.total > 0 ? (float)st.used / st.total * 100.0f : 0;
+    if (stPct >= ALERT_STORAGE_USAGE && (now - lastAlertStorage > ALERT_COOLDOWN)) {
+        playTone(TONE_ALERT, TONE_DURATION);
+        lastAlertStorage = now;
+    }
 }
 
 void UI::nextScreen() {
@@ -21,6 +74,17 @@ void UI::prevScreen() {
 }
 
 void UI::buttonAction(BLEMonitorClient& ble) {
+    if (currentScreen == Screen::SETTINGS) {
+        // Settings画面ではトグル操作
+        soundEnabled = !soundEnabled;
+        saveSettings();
+        needsFullRedraw = true;
+        // 変更確認用にトーンを鳴らす（ONにしたときだけ）
+        if (soundEnabled) {
+            playTone(TONE_BLE_CONNECT, TONE_DURATION);
+        }
+        return;
+    }
     if (currentScreen == Screen::REGISTRATION) {
         if (!ble.isConnected()) {
             // スキャン or デバイス選択
@@ -88,7 +152,9 @@ void UI::update(BLEMonitorClient& ble) {
     drawHeader(ble);
     drawFooter();
 
-    if (!ble.isConnected() && currentScreen != Screen::REGISTRATION) {
+    if (!ble.isConnected() &&
+        currentScreen != Screen::REGISTRATION &&
+        currentScreen != Screen::SETTINGS) {
         drawDisconnected(ble);
     } else {
         switch (currentScreen) {
@@ -99,6 +165,7 @@ void UI::update(BLEMonitorClient& ble) {
             case Screen::NETWORK:       drawNetwork(ble); break;
             case Screen::SYSTEM_INFO:   drawSystemInfo(ble); break;
             case Screen::QR_CODE:       drawQrCodeScreen(ble); break;
+            case Screen::SETTINGS:      drawSettings(); break;
             case Screen::REGISTRATION:  drawRegistration(ble); break;
             default: break;
         }
@@ -133,7 +200,7 @@ void UI::drawFooter() {
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
 
     const char* screenNames[] = {
-        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "QR", "Register"
+        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "QR", "Settings", "Register"
     };
     int idx = (int)currentScreen;
 
@@ -457,6 +524,52 @@ void UI::drawQrCodeScreen(BLEMonitorClient& ble) {
     int urlW = strlen(url5000) * 6;
     M5.Lcd.setCursor((SCREEN_WIDTH - urlW) / 2, urlY);
     M5.Lcd.printf("IP: %s", net.ip.c_str());
+}
+
+// === Settings Screen ===
+void UI::drawSettings() {
+    drawScreenTitle("Settings");
+    int y = HEADER_HEIGHT + 50;
+
+    // Sound toggle
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setTextColor(COLOR_TEXT);
+    M5.Lcd.setCursor(10, y);
+    M5.Lcd.print("Sound Alerts:");
+    M5.Lcd.fillRect(130, y, 60, 8, COLOR_BG);
+    M5.Lcd.setCursor(130, y);
+    if (soundEnabled) {
+        M5.Lcd.setTextColor(COLOR_GOOD);
+        M5.Lcd.print("ON");
+    } else {
+        M5.Lcd.setTextColor(COLOR_BAD);
+        M5.Lcd.print("OFF");
+    }
+    y += 24;
+
+    M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+    M5.Lcd.setCursor(10, y);
+    M5.Lcd.print("Press [Select] to toggle sound");
+    y += 30;
+
+    // Alert thresholds info
+    M5.Lcd.setTextColor(COLOR_ACCENT);
+    M5.Lcd.setCursor(10, y);
+    M5.Lcd.print("--- Alert Thresholds ---");
+    y += 16;
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), ">= %.0f%%", ALERT_CPU_USAGE);
+    drawKeyValue(10, y, "CPU Usage:", buf, COLOR_WARN);
+    y += 16;
+    snprintf(buf, sizeof(buf), ">= %.0f C", ALERT_CPU_TEMP);
+    drawKeyValue(10, y, "CPU Temp:", buf, COLOR_WARN);
+    y += 16;
+    snprintf(buf, sizeof(buf), ">= %.0f%%", ALERT_RAM_USAGE);
+    drawKeyValue(10, y, "RAM Usage:", buf, COLOR_WARN);
+    y += 16;
+    snprintf(buf, sizeof(buf), ">= %.0f%%", ALERT_STORAGE_USAGE);
+    drawKeyValue(10, y, "Storage:", buf, COLOR_WARN);
 }
 
 // === Registration Screen ===
