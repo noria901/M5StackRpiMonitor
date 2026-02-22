@@ -4,6 +4,7 @@
 #include <BLEClient.h>
 #include <BLEScan.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include "config.h"
 
 enum class BLEState {
@@ -56,7 +57,9 @@ public:
     bool isScanComplete();
     bool connectToServer(BLEAdvertisedDevice* device);
     void disconnect();
+    void forgetDevice();
     bool isConnected();
+    bool hasSavedServer();
     BLEState getState();
 
     bool readAll();
@@ -88,6 +91,7 @@ private:
     String serverName = "";
     std::vector<BLEAdvertisedDevice> foundDevices;
     unsigned long scanStartTime = 0;
+    Preferences prefs;
 
     bool readCharacteristic(const char* uuid, String& result);
     void parseCpuInfo(const String& json);

@@ -43,7 +43,7 @@ private:
     void drawNetwork(BLEMonitorClient& ble);
     void drawSystemInfo(BLEMonitorClient& ble);
     void drawRegistration(BLEMonitorClient& ble);
-    void drawDisconnected();
+    void drawDisconnected(BLEMonitorClient& ble);
 
     // Drawing helpers
     void drawProgressBar(int x, int y, int w, int h, float percent, uint16_t color);

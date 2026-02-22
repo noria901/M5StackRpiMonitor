@@ -42,6 +42,14 @@ void BLEMonitorClient::init() {
     pScan->setActiveScan(true);
     pScan->setInterval(100);
     pScan->setWindow(99);
+
+    // Restore last connected server name from NVS
+    prefs.begin("ble", true);  // read-only
+    serverName = prefs.getString("server", "");
+    prefs.end();
+    if (serverName.length() > 0) {
+        Serial.printf("Saved server: %s (will auto-connect)\n", serverName.c_str());
+    }
 }
 
 void BLEMonitorClient::scan() {
@@ -84,6 +92,12 @@ bool BLEMonitorClient::connectToServer(BLEAdvertisedDevice* device) {
 
     serverName = device->getName().c_str();
     state = BLEState::CONNECTED;
+
+    // Persist server name to NVS for auto-connect after reboot
+    prefs.begin("ble", false);
+    prefs.putString("server", serverName);
+    prefs.end();
+
     Serial.println("Connected successfully");
     return true;
 }
@@ -93,11 +107,24 @@ void BLEMonitorClient::disconnect() {
         pClient->disconnect();
     }
     state = BLEState::DISCONNECTED;
+    // Keep serverName and NVS so auto-reconnect works after connection loss
+}
+
+void BLEMonitorClient::forgetDevice() {
+    disconnect();
     serverName = "";
+    prefs.begin("ble", false);
+    prefs.remove("server");
+    prefs.end();
+    Serial.println("Saved device cleared");
 }
 
 bool BLEMonitorClient::isConnected() {
     return state == BLEState::CONNECTED && pClient && pClient->isConnected();
+}
+
+bool BLEMonitorClient::hasSavedServer() {
+    return serverName.length() > 0;
 }
 
 BLEState BLEMonitorClient::getState() {

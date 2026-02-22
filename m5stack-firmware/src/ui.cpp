@@ -42,8 +42,8 @@ void UI::buttonAction(BLEMonitorClient& ble) {
                 needsFullRedraw = true;
             }
         } else {
-            // 切断
-            ble.disconnect();
+            // 切断 & 保存デバイスを忘れる
+            ble.forgetDevice();
             needsFullRedraw = true;
         }
         return;
@@ -81,7 +81,7 @@ void UI::update(BLEMonitorClient& ble) {
     drawFooter();
 
     if (!ble.isConnected() && currentScreen != Screen::REGISTRATION) {
-        drawDisconnected();
+        drawDisconnected(ble);
     } else {
         switch (currentScreen) {
             case Screen::DASHBOARD:     drawDashboard(ble); break;
@@ -443,19 +443,31 @@ void UI::drawRegistration(BLEMonitorClient& ble) {
 }
 
 // === Disconnected Screen ===
-void UI::drawDisconnected() {
-    M5.Lcd.setTextSize(2);
-    M5.Lcd.setTextColor(COLOR_TEXT_DIM);
-    M5.Lcd.setCursor(50, 80);
-    M5.Lcd.print("No Connection");
+void UI::drawDisconnected(BLEMonitorClient& ble) {
+    if (ble.hasSavedServer()) {
+        M5.Lcd.setTextSize(2);
+        M5.Lcd.setTextColor(COLOR_ACCENT);
+        M5.Lcd.setCursor(30, 80);
+        M5.Lcd.print("Auto-connecting");
 
-    M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(40, 120);
-    M5.Lcd.print("Go to Register screen to");
-    M5.Lcd.setCursor(40, 136);
-    M5.Lcd.print("scan and connect to RPi");
+        M5.Lcd.setTextSize(1);
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(40, 120);
+        M5.Lcd.printf("Searching for %s...", ble.getServerName().c_str());
+    } else {
+        M5.Lcd.setTextSize(2);
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(50, 80);
+        M5.Lcd.print("No Connection");
 
-    M5.Lcd.setTextColor(COLOR_ACCENT);
-    M5.Lcd.setCursor(60, 170);
-    M5.Lcd.print("Press [Next>] to navigate");
+        M5.Lcd.setTextSize(1);
+        M5.Lcd.setCursor(40, 120);
+        M5.Lcd.print("Go to Register screen to");
+        M5.Lcd.setCursor(40, 136);
+        M5.Lcd.print("scan and connect to RPi");
+
+        M5.Lcd.setTextColor(COLOR_ACCENT);
+        M5.Lcd.setCursor(60, 170);
+        M5.Lcd.print("Press [Next>] to navigate");
+    }
 }
