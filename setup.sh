@@ -133,6 +133,59 @@ setup_web() {
     info "Then open: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<RPi-IP>'):5000"
 }
 
+uninstall() {
+    info "=== Uninstall M5Stack RPi Monitor ==="
+
+    # Stop and disable systemd service
+    local service_file="/etc/systemd/system/rpi-monitor.service"
+    if [[ -f "$service_file" ]]; then
+        info "Stopping and disabling systemd service..."
+        sudo systemctl stop rpi-monitor 2>/dev/null || true
+        sudo systemctl disable rpi-monitor 2>/dev/null || true
+        sudo rm -f "$service_file"
+        sudo systemctl daemon-reload
+        ok "systemd service removed"
+    else
+        info "systemd service not installed, skipping"
+    fi
+
+    # Remove venv
+    if [[ -d "$VENV_DIR" ]]; then
+        info "Removing Python virtual environment..."
+        rm -rf "$VENV_DIR"
+        ok "venv removed"
+    else
+        info "venv not found, skipping"
+    fi
+
+    # Remove registered device data
+    local data_dir="/var/lib/rpi-monitor"
+    if [[ -d "$data_dir" ]]; then
+        info "Removing device data ($data_dir)..."
+        sudo rm -rf "$data_dir"
+        ok "Device data removed"
+    else
+        info "No device data found, skipping"
+    fi
+
+    # Remove log files
+    local log_dir="$SCRIPT_DIR/logs"
+    if [[ -d "$log_dir" ]]; then
+        info "Removing log files..."
+        rm -rf "$log_dir"
+        ok "Logs removed"
+    fi
+
+    # Remove pid files
+    rm -f "$SCRIPT_DIR/.web.pid" "$SCRIPT_DIR/.daemon.pid"
+
+    echo ""
+    ok "=== Uninstall complete ==="
+    warn "System packages (bluez, python3-venv, etc.) were NOT removed."
+    warn "User group memberships (bluetooth, dialout) were NOT changed."
+    info "To remove system packages manually: sudo apt remove bluez python3-venv"
+}
+
 flash_firmware() {
     info "=== Flashing M5Stack Firmware ==="
     ensure_venv
@@ -174,16 +227,18 @@ M5Stack RPi Monitor Setup
 Usage: $0 [OPTION]
 
 Options:
-  --all       Full setup (system deps + Bluetooth + daemon + web UI)
-  --daemon    Set up BLE daemon only
-  --web       Set up Web UI only
-  --flash     Build and flash M5Stack firmware via USB
-  --help      Show this help
+  --all         Full setup (system deps + Bluetooth + daemon + web UI)
+  --daemon      Set up BLE daemon only
+  --web         Set up Web UI only
+  --flash       Build and flash M5Stack firmware via USB
+  --uninstall   Remove services, venv, and data files
+  --help        Show this help
 
 Examples:
   sudo ./setup.sh --all           # Full initial setup
   ./setup.sh --web                # Web UI only (no sudo needed)
   ./setup.sh --flash              # Flash M5Stack via USB
+  sudo ./setup.sh --uninstall     # Remove everything installed by this script
 HELP
 }
 
@@ -220,6 +275,9 @@ main() {
         --flash)
             setup_serial_permissions 2>/dev/null || true
             flash_firmware
+            ;;
+        --uninstall)
+            uninstall
             ;;
         --help|-h|*)
             usage
