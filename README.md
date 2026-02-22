@@ -73,6 +73,33 @@ rpi-web/             RPi 管理Web UI
 
 ## Setup - クイックスタート
 
+### セットアップスクリプト (推奨)
+
+全部まとめてやるなら:
+
+```bash
+git clone <repository-url> ~/M5StackRpiMonitor
+cd ~/M5StackRpiMonitor
+
+# フルセットアップ (system deps + Bluetooth + daemon + Web UI)
+sudo ./setup.sh --all
+```
+
+個別にやることもできます:
+
+```bash
+./setup.sh --web       # Web UIだけセットアップ
+./setup.sh --daemon    # BLEデーモンだけセットアップ
+./setup.sh --flash     # M5StackにUSBでファームウェア書き込み
+./setup.sh --help      # ヘルプ表示
+```
+
+`sudo ./setup.sh --all` を実行したら、あとはM5StackをUSB接続して `http://<RPi-IP>:5000/flash` を開き、**Flash Firmware** ボタンを押すだけです。
+
+---
+
+### 手動セットアップ (詳細)
+
 ### 1. RPiの前提パッケージをインストール
 
 ```bash
