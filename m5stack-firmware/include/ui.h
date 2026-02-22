@@ -29,6 +29,7 @@ public:
 private:
     Screen currentScreen = Screen::DASHBOARD;
     bool needsFullRedraw = true;
+    bool lastConnected = false;
     unsigned long lastUpdate = 0;
 
     // Registration screen state
