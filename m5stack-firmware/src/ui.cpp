@@ -1,4 +1,5 @@
 #include "ui.h"
+#include <qrcode.h>
 
 void UI::init() {
     M5.Lcd.fillScreen(COLOR_BG);
@@ -75,6 +76,10 @@ void UI::update(BLEMonitorClient& ble) {
 
     if (needsFullRedraw) {
         M5.Lcd.fillScreen(COLOR_BG);
+    } else {
+        // データ更新時はコンテンツエリアのみクリア（数値の重なりを防ぐ）
+        M5.Lcd.fillRect(0, HEADER_HEIGHT, SCREEN_WIDTH,
+                        SCREEN_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT, COLOR_BG);
     }
 
     drawHeader(ble);
@@ -90,6 +95,7 @@ void UI::update(BLEMonitorClient& ble) {
             case Screen::STORAGE_DETAIL:drawStorageDetail(ble); break;
             case Screen::NETWORK:       drawNetwork(ble); break;
             case Screen::SYSTEM_INFO:   drawSystemInfo(ble); break;
+            case Screen::QR_CODE:       drawQrCodeScreen(ble); break;
             case Screen::REGISTRATION:  drawRegistration(ble); break;
             default: break;
         }
@@ -124,7 +130,7 @@ void UI::drawFooter() {
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
 
     const char* screenNames[] = {
-        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "Register"
+        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "QR", "Register"
     };
     int idx = (int)currentScreen;
 
@@ -371,6 +377,75 @@ void UI::drawSystemInfo(BLEMonitorClient& ble) {
     int mins = (sec % 3600) / 60;
     snprintf(buf, sizeof(buf), "%dd %dh %dm", days, hours, mins);
     drawKeyValue(10, y, "Uptime:", buf, COLOR_GOOD);
+}
+
+// === QR Code Helper ===
+void UI::drawSingleQr(int x, int y, const char* text, const char* label) {
+    QRCode qrcode;
+    uint8_t qrcodeData[256];
+    qrcode_initText(&qrcode, qrcodeData, 3, ECC_LOW, text);
+
+    int moduleSize = 3;
+    int qrPixels = qrcode.size * moduleSize;
+    int padding = 4;
+    int totalSize = qrPixels + padding * 2;
+
+    // 白背景（QRコードの quiet zone）
+    M5.Lcd.fillRect(x, y, totalSize, totalSize, TFT_WHITE);
+
+    // 黒モジュールを描画
+    for (uint8_t my = 0; my < qrcode.size; my++) {
+        for (uint8_t mx = 0; mx < qrcode.size; mx++) {
+            if (qrcode_getModule(&qrcode, mx, my)) {
+                M5.Lcd.fillRect(x + padding + mx * moduleSize,
+                                y + padding + my * moduleSize,
+                                moduleSize, moduleSize, TFT_BLACK);
+            }
+        }
+    }
+
+    // ラベル（中央揃え）
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setTextColor(COLOR_ACCENT);
+    int labelW = strlen(label) * 6;  // textSize=1 は1文字6px幅
+    M5.Lcd.setCursor(x + (totalSize - labelW) / 2, y + totalSize + 4);
+    M5.Lcd.print(label);
+}
+
+// === QR Code Screen ===
+void UI::drawQrCodeScreen(BLEMonitorClient& ble) {
+    drawScreenTitle("QR Code");
+
+    auto net = ble.getNetworkInfo();
+    if (net.ip.length() == 0 || net.ip == "0.0.0.0") {
+        M5.Lcd.setTextSize(1);
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(60, 100);
+        M5.Lcd.print("IP address not available");
+        return;
+    }
+
+    char url5000[64], url8080[64];
+    snprintf(url5000, sizeof(url5000), "http://%s:5000", net.ip.c_str());
+    snprintf(url8080, sizeof(url8080), "http://%s:8080", net.ip.c_str());
+
+    // QRコード version 3 (29modules) * 3px + padding 4*2 = 95px
+    int qrTotalSize = 95;
+    int gap = 30;
+    int totalW = qrTotalSize * 2 + gap;
+    int startX = (SCREEN_WIDTH - totalW) / 2;
+    int qrY = HEADER_HEIGHT + 36;
+
+    drawSingleQr(startX, qrY, url5000, "Monitor :5000");
+    drawSingleQr(startX + qrTotalSize + gap, qrY, url8080, "Dashboard :8080");
+
+    // URL表示
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+    int urlY = qrY + qrTotalSize + 18;
+    int urlW = strlen(url5000) * 6;
+    M5.Lcd.setCursor((SCREEN_WIDTH - urlW) / 2, urlY);
+    M5.Lcd.printf("IP: %s", net.ip.c_str());
 }
 
 // === Registration Screen ===
