@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPi Monitor - Device Management</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 30px;
+        }
+        header h1 {
+            color: #00d4ff;
+            font-size: 1.8em;
+            margin-bottom: 8px;
+        }
+        header p {
+            color: #888;
+            font-size: 0.9em;
+        }
+        .device-list {
+            list-style: none;
+        }
+        .device-card {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s;
+        }
+        .device-card:hover {
+            border-color: #00d4ff;
+        }
+        .device-info h3 {
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .device-info .mac {
+            color: #888;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+        .device-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.8; }
+        .btn-rename {
+            background: #0f3460;
+            color: #00d4ff;
+        }
+        .btn-delete {
+            background: #3d0000;
+            color: #ff4444;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        .empty-state h2 {
+            margin-bottom: 12px;
+            color: #888;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            margin-left: 8px;
+            background: #0a3d0a;
+            color: #4caf50;
+        }
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: #16213e;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 24px;
+            width: 90%;
+            max-width: 400px;
+        }
+        .modal h3 { margin-bottom: 16px; color: #00d4ff; }
+        .modal input {
+            width: 100%;
+            padding: 10px;
+            background: #1a1a2e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 1em;
+            margin-bottom: 16px;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .btn-cancel {
+            background: #333;
+            color: #aaa;
+        }
+        .btn-save {
+            background: #00d4ff;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RPi Monitor</h1>
+            <p>M5Stack Device Management</p>
+        </header>
+
+        {% if devices %}
+        <ul class="device-list">
+            {% for device in devices %}
+            <li class="device-card" data-mac="{{ device.mac }}">
+                <div class="device-info">
+                    <h3>
+                        <span class="device-name">{{ device.device_name or 'Unknown' }}</span>
+                        <span class="status-badge">Registered</span>
+                    </h3>
+                    <span class="mac">{{ device.mac }}</span>
+                </div>
+                <div class="device-actions">
+                    <button class="btn btn-rename" onclick="openRename('{{ device.mac }}', '{{ device.device_name }}')">
+                        Rename
+                    </button>
+                    <button class="btn btn-delete" onclick="deleteDevice('{{ device.mac }}')">
+                        Delete
+                    </button>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="empty-state">
+            <h2>No Devices Registered</h2>
+            <p>Use the M5Stack registration screen to connect and register a device via BLE.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Rename Modal -->
+    <div class="modal-overlay" id="renameModal">
+        <div class="modal">
+            <h3>Rename Device</h3>
+            <input type="text" id="renameInput" placeholder="Device name">
+            <input type="hidden" id="renameMac">
+            <div class="modal-actions">
+                <button class="btn btn-cancel" onclick="closeRename()">Cancel</button>
+                <button class="btn btn-save" onclick="saveRename()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openRename(mac, currentName) {
+            document.getElementById('renameMac').value = mac;
+            document.getElementById('renameInput').value = currentName || '';
+            document.getElementById('renameModal').classList.add('active');
+            document.getElementById('renameInput').focus();
+        }
+
+        function closeRename() {
+            document.getElementById('renameModal').classList.remove('active');
+        }
+
+        async function saveRename() {
+            const mac = document.getElementById('renameMac').value;
+            const name = document.getElementById('renameInput').value.trim();
+            if (!name) return;
+
+            const resp = await fetch(`/devices/${encodeURIComponent(mac)}/rename`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+
+            if (resp.ok) {
+                location.reload();
+            }
+        }
+
+        async function deleteDevice(mac) {
+            if (!confirm('Remove this device?')) return;
+
+            const resp = await fetch(`/devices/${encodeURIComponent(mac)}`, {
+                method: 'DELETE'
+            });
+
+            if (resp.ok) {
+                location.reload();
+            }
+        }
+
+        // Enter key in rename modal
+        document.getElementById('renameInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') saveRename();
+            if (e.key === 'Escape') closeRename();
+        });
+    </script>
+</body>
+</html>

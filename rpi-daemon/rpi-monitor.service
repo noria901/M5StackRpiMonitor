@@ -1,0 +1,15 @@
+[Unit]
+Description=RPi Monitor BLE Daemon
+After=bluetooth.target
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/rpi-monitor/main.py
+WorkingDirectory=/opt/rpi-monitor
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
