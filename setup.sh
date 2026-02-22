@@ -129,77 +129,25 @@ setup_web() {
     ensure_venv
     pip install -q -r "$SCRIPT_DIR/rpi-web/requirements.txt"
     ok "Web UI dependencies installed (includes PlatformIO)"
-
-    # systemd service
-    if check_root_for_system 2>/dev/null; then
-        install_web_service
-    else
-        info "Skipping systemd service (run with sudo to install)"
-        info "  Manual run: source venv/bin/activate && python3 rpi-web/app.py"
-        info "  Then open: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<RPi-IP>'):5000"
-    fi
-}
-
-install_web_service() {
-    info "Installing Web UI systemd service..."
-    local service_file="/etc/systemd/system/rpi-monitor-web.service"
-    local python_path="$VENV_DIR/bin/python3"
-    local app_path="$SCRIPT_DIR/rpi-web/app.py"
-    local work_dir="$SCRIPT_DIR/rpi-web"
-    local run_user="${SUDO_USER:-$USER}"
-
-    cat > "$service_file" <<UNIT
-[Unit]
-Description=RPi Monitor Web UI
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=$python_path $app_path
-WorkingDirectory=$work_dir
-Restart=always
-RestartSec=5
-User=$run_user
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-    systemctl daemon-reload
-    systemctl enable rpi-monitor-web
-    systemctl start rpi-monitor-web
-    ok "rpi-monitor-web service installed and started"
-    info "  Open: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<RPi-IP>'):5000"
+    info "Start with: source venv/bin/activate && python3 rpi-web/app.py"
+    info "Then open: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<RPi-IP>'):5000"
 }
 
 uninstall() {
     info "=== Uninstall M5Stack RPi Monitor ==="
 
-    # Stop and disable BLE daemon service
-    local daemon_service="/etc/systemd/system/rpi-monitor.service"
-    if [[ -f "$daemon_service" ]]; then
-        info "Stopping and disabling BLE daemon service..."
+    # Stop and disable systemd service
+    local service_file="/etc/systemd/system/rpi-monitor.service"
+    if [[ -f "$service_file" ]]; then
+        info "Stopping and disabling systemd service..."
         sudo systemctl stop rpi-monitor 2>/dev/null || true
         sudo systemctl disable rpi-monitor 2>/dev/null || true
-        sudo rm -f "$daemon_service"
-        ok "rpi-monitor service removed"
+        sudo rm -f "$service_file"
+        sudo systemctl daemon-reload
+        ok "systemd service removed"
     else
-        info "BLE daemon service not installed, skipping"
+        info "systemd service not installed, skipping"
     fi
-
-    # Stop and disable Web UI service
-    local web_service="/etc/systemd/system/rpi-monitor-web.service"
-    if [[ -f "$web_service" ]]; then
-        info "Stopping and disabling Web UI service..."
-        sudo systemctl stop rpi-monitor-web 2>/dev/null || true
-        sudo systemctl disable rpi-monitor-web 2>/dev/null || true
-        sudo rm -f "$web_service"
-        ok "rpi-monitor-web service removed"
-    else
-        info "Web UI service not installed, skipping"
-    fi
-
-    sudo systemctl daemon-reload 2>/dev/null || true
 
     # Remove venv
     if [[ -d "$VENV_DIR" ]]; then
@@ -314,10 +262,9 @@ main() {
             ok "=== Setup complete! ==="
             info "Next steps:"
             info "  1. Re-login (if group changes were made)"
-            info "  2. Open http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<RPi-IP>'):5000/flash"
-            info "  3. Connect M5Stack via USB and click 'Flash Firmware'"
-            info ""
-            info "Services status: ./run.sh status"
+            info "  2. source venv/bin/activate && python3 rpi-web/app.py"
+            info "  3. Open http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<RPi-IP>'):5000/flash"
+            info "  4. Connect M5Stack via USB and click 'Flash Firmware'"
             ;;
         --daemon)
             setup_daemon
