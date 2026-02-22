@@ -57,9 +57,7 @@ bool BLEMonitorClient::isScanComplete() {
     if (millis() - scanStartTime >= (unsigned long)BLE_SCAN_DURATION * 1000) {
         pScan->stop();
         pScan->clearResults();
-        if (foundDevices.empty()) {
-            state = BLEState::DISCONNECTED;
-        }
+        state = BLEState::DISCONNECTED;  // always exit SCANNING, device list shown by foundDevices
         Serial.printf("Scan complete. Found %d devices.\n", foundDevices.size());
         return true;
     }
