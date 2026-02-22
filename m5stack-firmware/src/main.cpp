@@ -35,15 +35,35 @@ void loop() {
     }
 
     if (M5.BtnB.wasPressed()) {
-        ui.buttonAction(bleClient);
+        if (bleClient.getState() != BLEState::SCANNING) {
+            ui.buttonAction(bleClient);
+        }
     }
 
     if (M5.BtnC.wasPressed()) {
         ui.nextScreen();
     }
 
+    // スキャン完了チェック
+    if (bleClient.getState() == BLEState::SCANNING) {
+        if (bleClient.isScanComplete()) {
+            // 自動再接続: 前回のサーバーが見つかったら自動接続
+            if (ui.getCurrentScreen() != Screen::REGISTRATION &&
+                bleClient.getServerName().length() > 0) {
+                for (int i = 0; i < bleClient.getFoundDeviceCount(); i++) {
+                    if (bleClient.getFoundDeviceName(i) == bleClient.getServerName()) {
+                        bleClient.connectToServer(bleClient.getFoundDevice(i));
+                        break;
+                    }
+                }
+            }
+            ui.setNeedsRedraw();
+        }
+    }
+
     // 自動再接続 (Registration画面以外で切断中の場合)
     if (!bleClient.isConnected() &&
+        bleClient.getState() != BLEState::SCANNING &&
         ui.getCurrentScreen() != Screen::REGISTRATION &&
         bleClient.getServerName().length() > 0) {
         unsigned long now = millis();
@@ -51,12 +71,6 @@ void loop() {
             lastReconnectAttempt = now;
             // 前回接続していたサーバーへの再接続を試みる
             bleClient.scan();
-            for (int i = 0; i < bleClient.getFoundDeviceCount(); i++) {
-                if (bleClient.getFoundDeviceName(i) == bleClient.getServerName()) {
-                    bleClient.connectToServer(bleClient.getFoundDevice(i));
-                    break;
-                }
-            }
         }
     }
 

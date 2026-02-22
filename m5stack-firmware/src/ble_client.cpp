@@ -47,14 +47,23 @@ void BLEMonitorClient::init() {
 void BLEMonitorClient::scan() {
     state = BLEState::SCANNING;
     foundDevices.clear();
+    scanStartTime = millis();
     Serial.println("Starting BLE scan...");
-    pScan->start(BLE_SCAN_DURATION, true);  // true = blocking, wait for scan to finish
-    pScan->clearResults();
+    pScan->start(BLE_SCAN_DURATION, false);  // non-blocking so UI can update
+}
 
-    if (foundDevices.empty()) {
-        state = BLEState::DISCONNECTED;
+bool BLEMonitorClient::isScanComplete() {
+    if (state != BLEState::SCANNING) return true;
+    if (millis() - scanStartTime >= (unsigned long)BLE_SCAN_DURATION * 1000) {
+        pScan->stop();
+        pScan->clearResults();
+        if (foundDevices.empty()) {
+            state = BLEState::DISCONNECTED;
+        }
+        Serial.printf("Scan complete. Found %d devices.\n", foundDevices.size());
+        return true;
     }
-    Serial.printf("Scan complete. Found %d devices.\n", foundDevices.size());
+    return false;
 }
 
 bool BLEMonitorClient::connectToServer(BLEAdvertisedDevice* device) {

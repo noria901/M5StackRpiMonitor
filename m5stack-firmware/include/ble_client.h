@@ -53,6 +53,7 @@ class BLEMonitorClient {
 public:
     void init();
     void scan();
+    bool isScanComplete();
     bool connectToServer(BLEAdvertisedDevice* device);
     void disconnect();
     bool isConnected();
@@ -86,6 +87,7 @@ private:
 
     String serverName = "";
     std::vector<BLEAdvertisedDevice> foundDevices;
+    unsigned long scanStartTime = 0;
 
     bool readCharacteristic(const char* uuid, String& result);
     void parseCpuInfo(const String& json);

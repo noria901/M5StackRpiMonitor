@@ -22,6 +22,7 @@ public:
     void nextScreen();
     void prevScreen();
     void buttonAction(BLEMonitorClient& ble);
+    void setNeedsRedraw();
     Screen getCurrentScreen();
 
 private:

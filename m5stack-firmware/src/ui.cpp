@@ -55,6 +55,10 @@ void UI::buttonAction(BLEMonitorClient& ble) {
     }
 }
 
+void UI::setNeedsRedraw() {
+    needsFullRedraw = true;
+}
+
 Screen UI::getCurrentScreen() {
     return currentScreen;
 }
