@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPi Monitor - Firmware Flash</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 30px;
+        }
+        header h1 {
+            color: #00d4ff;
+            font-size: 1.8em;
+            margin-bottom: 8px;
+        }
+        header p {
+            color: #888;
+            font-size: 0.9em;
+        }
+        nav {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        nav a {
+            color: #00d4ff;
+            text-decoration: none;
+            margin: 0 12px;
+            padding: 6px 16px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        nav a:hover, nav a.active {
+            background: #0f3460;
+        }
+        .flash-section {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .flash-section h2 {
+            color: #00d4ff;
+            font-size: 1.2em;
+            margin-bottom: 16px;
+        }
+        .step {
+            margin-bottom: 20px;
+        }
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .step-number {
+            background: #0f3460;
+            color: #00d4ff;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85em;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        .step-title {
+            font-weight: bold;
+        }
+        .port-select {
+            width: 100%;
+            padding: 10px;
+            background: #1a1a2e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 1em;
+            margin-bottom: 8px;
+        }
+        .port-select option {
+            background: #1a1a2e;
+        }
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .btn-flash {
+            background: #00d4ff;
+            color: #000;
+            font-weight: bold;
+            width: 100%;
+            padding: 14px;
+            font-size: 1.1em;
+        }
+        .btn-refresh {
+            background: #0f3460;
+            color: #00d4ff;
+            font-size: 0.85em;
+            padding: 6px 14px;
+        }
+        .log-container {
+            background: #0d1117;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+            display: none;
+        }
+        .log-container.visible {
+            display: block;
+        }
+        .status-bar {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+        .status-bar.visible {
+            display: flex;
+        }
+        .status-bar.building {
+            background: #1a3a1a;
+            border: 1px solid #2d5a2d;
+        }
+        .status-bar.flashing {
+            background: #3a3a1a;
+            border: 1px solid #5a5a2d;
+        }
+        .status-bar.done {
+            background: #0a3d0a;
+            border: 1px solid #4caf50;
+        }
+        .status-bar.error {
+            background: #3d0a0a;
+            border: 1px solid #ff4444;
+        }
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #555;
+            border-top-color: #00d4ff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .no-ports {
+            color: #888;
+            text-align: center;
+            padding: 20px;
+        }
+        .help-text {
+            color: #666;
+            font-size: 0.85em;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RPi Monitor</h1>
+            <p>Firmware Flash Tool</p>
+        </header>
+
+        <nav>
+            <a href="/">Devices</a>
+            <a href="/flash" class="active">Flash</a>
+        </nav>
+
+        <div class="flash-section">
+            <h2>M5Stack Firmware Flash</h2>
+            <p style="color:#888; margin-bottom:20px;">
+                M5StackをUSBで接続し、ワンクリックでファームウェアを書き込みます。
+            </p>
+
+            <!-- Step 1: Port Selection -->
+            <div class="step">
+                <div class="step-header">
+                    <span class="step-number">1</span>
+                    <span class="step-title">M5StackをUSBで接続</span>
+                    <button class="btn btn-refresh" onclick="refreshPorts()">Refresh</button>
+                </div>
+                <select class="port-select" id="portSelect">
+                    {% if ports %}
+                        {% for p in ports %}
+                        <option value="{{ p.port }}">{{ p.port }} - {{ p.description }}</option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="" disabled selected>No device detected</option>
+                    {% endif %}
+                </select>
+                <div class="help-text">
+                    デバイスが表示されない場合はUSBケーブルを確認して Refresh してください。
+                </div>
+            </div>
+
+            <!-- Step 2: Flash -->
+            <div class="step">
+                <div class="step-header">
+                    <span class="step-number">2</span>
+                    <span class="step-title">ビルド & 書き込み</span>
+                </div>
+                <button class="btn btn-flash" id="flashBtn" onclick="startFlash()"
+                    {% if not ports %}disabled{% endif %}>
+                    Flash Firmware
+                </button>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div class="status-bar" id="statusBar">
+            <div class="spinner" id="statusSpinner"></div>
+            <span id="statusText"></span>
+        </div>
+
+        <!-- Log Output -->
+        <div class="log-container" id="logContainer"></div>
+    </div>
+
+    <script>
+        let pollTimer = null;
+
+        async function refreshPorts() {
+            const resp = await fetch('/api/serial-ports');
+            const ports = await resp.json();
+            const select = document.getElementById('portSelect');
+            const flashBtn = document.getElementById('flashBtn');
+
+            select.innerHTML = '';
+            if (ports.length === 0) {
+                select.innerHTML = '<option value="" disabled selected>No device detected</option>';
+                flashBtn.disabled = true;
+            } else {
+                ports.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.port;
+                    opt.textContent = `${p.port} - ${p.description}`;
+                    select.appendChild(opt);
+                });
+                flashBtn.disabled = false;
+            }
+        }
+
+        async function startFlash() {
+            const port = document.getElementById('portSelect').value;
+            if (!port) return;
+
+            const flashBtn = document.getElementById('flashBtn');
+            flashBtn.disabled = true;
+            flashBtn.textContent = 'Flashing...';
+
+            const logEl = document.getElementById('logContainer');
+            logEl.classList.add('visible');
+            logEl.textContent = '';
+
+            const resp = await fetch('/api/flash', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ port })
+            });
+
+            if (!resp.ok) {
+                const err = await resp.json();
+                showStatus('error', err.message || 'Failed to start flash');
+                flashBtn.disabled = false;
+                flashBtn.textContent = 'Flash Firmware';
+                return;
+            }
+
+            // Poll for status
+            let lastLogLen = 0;
+            pollTimer = setInterval(async () => {
+                const statusResp = await fetch('/api/flash/status');
+                const status = await statusResp.json();
+
+                // Update log
+                if (status.log.length > lastLogLen) {
+                    const newLines = status.log.slice(lastLogLen);
+                    logEl.textContent += newLines.join('\n') + '\n';
+                    logEl.scrollTop = logEl.scrollHeight;
+                    lastLogLen = status.log.length;
+                }
+
+                // Update status bar
+                showStatus(status.state, status.message);
+
+                // Done or error
+                if (status.state === 'done' || status.state === 'error') {
+                    clearInterval(pollTimer);
+                    flashBtn.disabled = false;
+                    flashBtn.textContent = 'Flash Firmware';
+                }
+            }, 500);
+        }
+
+        function showStatus(state, message) {
+            const bar = document.getElementById('statusBar');
+            const text = document.getElementById('statusText');
+            const spinner = document.getElementById('statusSpinner');
+
+            bar.className = 'status-bar visible ' + state;
+            text.textContent = message;
+            spinner.style.display = (state === 'building' || state === 'flashing') ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>
