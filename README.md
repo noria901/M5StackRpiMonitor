@@ -94,7 +94,24 @@ sudo ./setup.sh --all
 ./setup.sh --help      # ヘルプ表示
 ```
 
-`sudo ./setup.sh --all` を実行したら、あとはM5StackをUSB接続して `http://<RPi-IP>:5000/flash` を開き、**Flash Firmware** ボタンを押すだけです。
+`sudo ./setup.sh --all` を実行したら、あとは `./run.sh start` で起動するだけです。
+
+### 起動 / 停止
+
+```bash
+./run.sh start              # 全サービス起動 (Web UI + BLE daemon)
+./run.sh stop               # 全サービス停止
+./run.sh restart             # 再起動
+./run.sh status             # 稼働状態を確認
+
+./run.sh start web          # Web UIだけ起動
+./run.sh start daemon       # BLEデーモンだけ起動
+./run.sh stop web           # Web UIだけ停止
+
+./run.sh logs               # 直近ログ表示
+./run.sh logs web           # Web UIログをtail -f
+./run.sh logs daemon        # BLEデーモンログをtail -f
+```
 
 ---
 
