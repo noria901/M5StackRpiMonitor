@@ -55,11 +55,14 @@ void loop() {
 
     // Button handling
     if (M5.BtnA.wasPressed()) {
-        if (ui.getCurrentScreen() == Screen::REGISTRATION && bleClient.getFoundDeviceCount() > 0) {
-            // Registration画面ではBtnAでリスト上移動 or キャンセル
-            ui.buttonAction(bleClient);  // handled in registration context
+        int devCount = bleClient.getFoundDeviceCount();
+        if (ui.getCurrentScreen() == Screen::REGISTRATION &&
+            !bleClient.isConnected() && devCount > 0) {
+            // デバイスリスト表示中: 上移動 or confirmキャンセル
+            ui.registrationBtnA();
+        } else {
+            ui.prevScreen();
         }
-        ui.prevScreen();
     }
 
     if (M5.BtnB.wasPressed()) {
@@ -69,7 +72,14 @@ void loop() {
     }
 
     if (M5.BtnC.wasPressed()) {
-        ui.nextScreen();
+        int devCount = bleClient.getFoundDeviceCount();
+        if (ui.getCurrentScreen() == Screen::REGISTRATION &&
+            !bleClient.isConnected() && devCount > 0) {
+            // デバイスリスト表示中: 下移動
+            ui.registrationBtnC(devCount);
+        } else {
+            ui.nextScreen();
+        }
     }
 
     // BLE接続状態の変化を検出して音を鳴らす

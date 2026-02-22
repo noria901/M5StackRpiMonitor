@@ -25,6 +25,8 @@ public:
     void nextScreen();
     void prevScreen();
     void buttonAction(BLEMonitorClient& ble);
+    void registrationBtnA();
+    void registrationBtnC(int deviceCount);
     void setNeedsRedraw();
     Screen getCurrentScreen();
 

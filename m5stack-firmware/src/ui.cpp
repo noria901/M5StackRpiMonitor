@@ -59,6 +59,24 @@ void UI::checkAlerts(BLEMonitorClient& ble) {
     }
 }
 
+void UI::registrationBtnA() {
+    // confirm中 → キャンセル、それ以外 → リスト上移動
+    if (regConfirmMode) {
+        regConfirmMode = false;
+    } else if (regSelectedDevice > 0) {
+        regSelectedDevice--;
+    }
+    needsFullRedraw = true;
+}
+
+void UI::registrationBtnC(int deviceCount) {
+    // リスト下移動（confirm中は無効）
+    if (!regConfirmMode && regSelectedDevice < deviceCount - 1) {
+        regSelectedDevice++;
+    }
+    needsFullRedraw = true;
+}
+
 void UI::nextScreen() {
     int next = ((int)currentScreen + 1) % (int)Screen::SCREEN_COUNT;
     currentScreen = (Screen)next;
