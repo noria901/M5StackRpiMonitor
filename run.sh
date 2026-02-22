@@ -50,6 +50,14 @@ is_running() {
 # --- Web UI ---
 
 start_web() {
+    # systemd service があればそちらを使う
+    if systemctl list-unit-files rpi-monitor-web.service &>/dev/null 2>&1; then
+        info "Starting Web UI via systemd..."
+        sudo systemctl start rpi-monitor-web
+        ok "Web UI started (systemd) - http://$(get_ip):5000"
+        return
+    fi
+
     if is_running "$PIDFILE_WEB"; then
         warn "Web UI already running (PID $(cat "$PIDFILE_WEB"))"
         return
@@ -65,6 +73,13 @@ start_web() {
 }
 
 stop_web() {
+    if systemctl list-unit-files rpi-monitor-web.service &>/dev/null 2>&1; then
+        info "Stopping Web UI via systemd..."
+        sudo systemctl stop rpi-monitor-web
+        ok "Web UI stopped (systemd)"
+        return
+    fi
+
     if is_running "$PIDFILE_WEB"; then
         local pid
         pid=$(cat "$PIDFILE_WEB")
@@ -146,7 +161,13 @@ show_status() {
     echo ""
 
     # Web UI
-    if is_running "$PIDFILE_WEB"; then
+    if systemctl list-unit-files rpi-monitor-web.service &>/dev/null 2>&1; then
+        if systemctl is-active rpi-monitor-web &>/dev/null; then
+            echo -e "  Web UI:     ${GREEN}running${NC} (systemd) - http://$(get_ip):5000"
+        else
+            echo -e "  Web UI:     ${RED}stopped${NC} (systemd)"
+        fi
+    elif is_running "$PIDFILE_WEB"; then
         echo -e "  Web UI:     ${GREEN}running${NC} (PID $(cat "$PIDFILE_WEB")) - http://$(get_ip):5000"
     else
         echo -e "  Web UI:     ${RED}stopped${NC}"
@@ -174,7 +195,9 @@ show_logs() {
     local target="${1:-all}"
     case "$target" in
         web)
-            if [[ -f "$SCRIPT_DIR/logs/web.log" ]]; then
+            if systemctl list-unit-files rpi-monitor-web.service &>/dev/null 2>&1; then
+                journalctl -u rpi-monitor-web -f
+            elif [[ -f "$SCRIPT_DIR/logs/web.log" ]]; then
                 tail -f "$SCRIPT_DIR/logs/web.log"
             else
                 error "No web log found"
@@ -191,7 +214,9 @@ show_logs() {
             ;;
         all|*)
             echo -e "${CYAN}=== Recent Web UI logs ===${NC}"
-            if [[ -f "$SCRIPT_DIR/logs/web.log" ]]; then
+            if systemctl list-unit-files rpi-monitor-web.service &>/dev/null 2>&1; then
+                journalctl -u rpi-monitor-web -n 20 --no-pager 2>/dev/null || echo "  (no log)"
+            elif [[ -f "$SCRIPT_DIR/logs/web.log" ]]; then
                 tail -20 "$SCRIPT_DIR/logs/web.log"
             else
                 echo "  (no log)"

@@ -1,0 +1,14 @@
+[Unit]
+Description=RPi Monitor Web UI
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/rpi-monitor-web/app.py
+WorkingDirectory=/opt/rpi-monitor-web
+Restart=always
+RestartSec=5
+User=pi
+
+[Install]
+WantedBy=multi-user.target
