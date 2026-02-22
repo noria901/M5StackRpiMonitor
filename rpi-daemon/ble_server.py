@@ -113,7 +113,7 @@ class Characteristic(ServiceInterface):
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
-        return list(self._value)
+        return bytes(self._value)
 
     @method()
     def WriteValue(self, value: "ay", options: "a{sv}"):
