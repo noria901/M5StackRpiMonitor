@@ -48,7 +48,7 @@ void BLEMonitorClient::scan() {
     state = BLEState::SCANNING;
     foundDevices.clear();
     Serial.println("Starting BLE scan...");
-    pScan->start(BLE_SCAN_DURATION, false);
+    pScan->start(BLE_SCAN_DURATION, true);  // true = blocking, wait for scan to finish
     pScan->clearResults();
 
     if (foundDevices.empty()) {
