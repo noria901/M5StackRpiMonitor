@@ -75,6 +75,10 @@ void UI::update(BLEMonitorClient& ble) {
 
     if (needsFullRedraw) {
         M5.Lcd.fillScreen(COLOR_BG);
+    } else {
+        // データ更新時はコンテンツエリアのみクリア（数値の重なりを防ぐ）
+        M5.Lcd.fillRect(0, HEADER_HEIGHT, SCREEN_WIDTH,
+                        SCREEN_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT, COLOR_BG);
     }
 
     drawHeader(ble);
