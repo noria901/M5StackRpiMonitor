@@ -35,3 +35,20 @@
 
 // Update interval
 #define DATA_UPDATE_INTERVAL   2000  // ms
+
+// Speaker Settings
+#define SPEAKER_PIN            25    // M5Stack internal speaker GPIO
+#define TONE_BLE_CONNECT       1000  // Hz
+#define TONE_BLE_DISCONNECT    400   // Hz
+#define TONE_ALERT             2000  // Hz
+#define TONE_DURATION          150   // ms
+
+// Alert Thresholds
+#define ALERT_CPU_USAGE        90.0f  // %
+#define ALERT_CPU_TEMP         80.0f  // Celsius
+#define ALERT_RAM_USAGE        90.0f  // %
+#define ALERT_STORAGE_USAGE    95.0f  // %
+#define ALERT_COOLDOWN         30000  // ms (同じアラートの再発火間隔)
+
+// LCD Brightness
+#define LCD_BRIGHTNESS         80

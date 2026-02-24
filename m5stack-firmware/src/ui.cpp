@@ -3,6 +3,77 @@
 
 void UI::init() {
     M5.Lcd.fillScreen(COLOR_BG);
+    loadSettings();
+    needsFullRedraw = true;
+}
+
+void UI::loadSettings() {
+    uiPrefs.begin("ui", true);  // read-only
+    soundEnabled = uiPrefs.getBool("sound", true);
+    uiPrefs.end();
+}
+
+void UI::saveSettings() {
+    uiPrefs.begin("ui", false);
+    uiPrefs.putBool("sound", soundEnabled);
+    uiPrefs.end();
+}
+
+void UI::playTone(int freq, int duration) {
+    if (!soundEnabled) return;
+    M5.Speaker.tone(freq, duration);
+}
+
+void UI::onBleConnected() {
+    playTone(TONE_BLE_CONNECT, TONE_DURATION);
+}
+
+void UI::onBleDisconnected() {
+    playTone(TONE_BLE_DISCONNECT, TONE_DURATION);
+}
+
+void UI::checkAlerts(BLEMonitorClient& ble) {
+    if (!soundEnabled || !ble.isConnected()) return;
+    unsigned long now = millis();
+    auto cpu = ble.getCpuInfo();
+    auto mem = ble.getMemoryInfo();
+    auto st = ble.getStorageInfo();
+
+    if (cpu.usage >= ALERT_CPU_USAGE && (now - lastAlertCpu > ALERT_COOLDOWN)) {
+        playTone(TONE_ALERT, TONE_DURATION);
+        lastAlertCpu = now;
+    }
+    if (cpu.temp >= ALERT_CPU_TEMP && (now - lastAlertTemp > ALERT_COOLDOWN)) {
+        playTone(TONE_ALERT, TONE_DURATION);
+        lastAlertTemp = now;
+    }
+    float ramPct = mem.ramTotal > 0 ? (float)mem.ramUsed / mem.ramTotal * 100.0f : 0;
+    if (ramPct >= ALERT_RAM_USAGE && (now - lastAlertRam > ALERT_COOLDOWN)) {
+        playTone(TONE_ALERT, TONE_DURATION);
+        lastAlertRam = now;
+    }
+    float stPct = st.total > 0 ? (float)st.used / st.total * 100.0f : 0;
+    if (stPct >= ALERT_STORAGE_USAGE && (now - lastAlertStorage > ALERT_COOLDOWN)) {
+        playTone(TONE_ALERT, TONE_DURATION);
+        lastAlertStorage = now;
+    }
+}
+
+void UI::registrationBtnA() {
+    // confirm中 → キャンセル、それ以外 → リスト上移動
+    if (regConfirmMode) {
+        regConfirmMode = false;
+    } else if (regSelectedDevice > 0) {
+        regSelectedDevice--;
+    }
+    needsFullRedraw = true;
+}
+
+void UI::registrationBtnC(int deviceCount) {
+    // リスト下移動（confirm中は無効）
+    if (!regConfirmMode && regSelectedDevice < deviceCount - 1) {
+        regSelectedDevice++;
+    }
     needsFullRedraw = true;
 }
 
@@ -21,6 +92,17 @@ void UI::prevScreen() {
 }
 
 void UI::buttonAction(BLEMonitorClient& ble) {
+    if (currentScreen == Screen::SETTINGS) {
+        // Settings画面ではトグル操作
+        soundEnabled = !soundEnabled;
+        saveSettings();
+        needsFullRedraw = true;
+        // 変更確認用にトーンを鳴らす（ONにしたときだけ）
+        if (soundEnabled) {
+            playTone(TONE_BLE_CONNECT, TONE_DURATION);
+        }
+        return;
+    }
     if (currentScreen == Screen::REGISTRATION) {
         if (!ble.isConnected()) {
             // スキャン or デバイス選択
@@ -74,18 +156,23 @@ void UI::update(BLEMonitorClient& ble) {
         ble.readAll();
     }
 
+    // 接続状態が変わったら全体再描画（画面内容が根本的に変わるため）
+    bool connected = ble.isConnected();
+    if (connected != lastConnected) {
+        needsFullRedraw = true;
+        lastConnected = connected;
+    }
+
     if (needsFullRedraw) {
         M5.Lcd.fillScreen(COLOR_BG);
-    } else {
-        // データ更新時はコンテンツエリアのみクリア（数値の重なりを防ぐ）
-        M5.Lcd.fillRect(0, HEADER_HEIGHT, SCREEN_WIDTH,
-                        SCREEN_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT, COLOR_BG);
     }
 
     drawHeader(ble);
     drawFooter();
 
-    if (!ble.isConnected() && currentScreen != Screen::REGISTRATION) {
+    if (!ble.isConnected() &&
+        currentScreen != Screen::REGISTRATION &&
+        currentScreen != Screen::SETTINGS) {
         drawDisconnected(ble);
     } else {
         switch (currentScreen) {
@@ -96,6 +183,7 @@ void UI::update(BLEMonitorClient& ble) {
             case Screen::NETWORK:       drawNetwork(ble); break;
             case Screen::SYSTEM_INFO:   drawSystemInfo(ble); break;
             case Screen::QR_CODE:       drawQrCodeScreen(ble); break;
+            case Screen::SETTINGS:      drawSettings(); break;
             case Screen::REGISTRATION:  drawRegistration(ble); break;
             default: break;
         }
@@ -130,7 +218,7 @@ void UI::drawFooter() {
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
 
     const char* screenNames[] = {
-        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "QR", "Register"
+        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "QR", "Settings", "Register"
     };
     int idx = (int)currentScreen;
 
@@ -171,8 +259,11 @@ void UI::drawKeyValue(int x, int y, const char* key, const char* value, uint16_t
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
     M5.Lcd.setCursor(x, y);
     M5.Lcd.print(key);
+    // value領域だけクリアして上書き（文字重なり防止）
+    int valueX = x + 110;
+    M5.Lcd.fillRect(valueX, y, SCREEN_WIDTH - valueX - 10, 8, COLOR_BG);
     M5.Lcd.setTextColor(valueColor);
-    M5.Lcd.setCursor(x + 110, y);
+    M5.Lcd.setCursor(valueX, y);
     M5.Lcd.print(value);
 }
 
@@ -196,6 +287,7 @@ void UI::drawDashboard(BLEMonitorClient& ble) {
     // CPU
     M5.Lcd.setTextSize(1);
     M5.Lcd.setTextColor(COLOR_TEXT);
+    M5.Lcd.fillRect(10, y, 96, 8, COLOR_BG);
     M5.Lcd.setCursor(10, y);
     snprintf(buf, sizeof(buf), "CPU  %.1f%%", cpu.usage);
     M5.Lcd.print(buf);
@@ -204,6 +296,7 @@ void UI::drawDashboard(BLEMonitorClient& ble) {
 
     // RAM
     float ramPercent = mem.ramTotal > 0 ? (float)mem.ramUsed / mem.ramTotal * 100.0f : 0;
+    M5.Lcd.fillRect(10, y, 96, 8, COLOR_BG);
     M5.Lcd.setCursor(10, y);
     snprintf(buf, sizeof(buf), "RAM  %.1f%%", ramPercent);
     M5.Lcd.print(buf);
@@ -212,27 +305,30 @@ void UI::drawDashboard(BLEMonitorClient& ble) {
 
     // Storage
     float stPercent = storage.total > 0 ? (float)storage.used / storage.total * 100.0f : 0;
+    M5.Lcd.fillRect(10, y, 96, 8, COLOR_BG);
     M5.Lcd.setCursor(10, y);
     snprintf(buf, sizeof(buf), "Disk %.1f%%", stPercent);
     M5.Lcd.print(buf);
     drawProgressBar(110, y - 2, 190, 14, stPercent, getUsageColor(stPercent));
     y += 30;
 
-    // Temp
+    // Temp（ラベルは固定、値だけクリア）
     M5.Lcd.setTextSize(1);
     M5.Lcd.setCursor(10, y);
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
     M5.Lcd.print("Temp:");
+    M5.Lcd.fillRect(60, y, 80, 8, COLOR_BG);
     M5.Lcd.setCursor(60, y);
     M5.Lcd.setTextColor(getUsageColor(cpu.temp / 85.0f * 100.0f));
     snprintf(buf, sizeof(buf), "%.1f C", cpu.temp);
     M5.Lcd.print(buf);
 
-    // IP
+    // IP（ラベルは固定、値だけクリア）
     auto net = ble.getNetworkInfo();
     M5.Lcd.setCursor(150, y);
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
     M5.Lcd.print("IP:");
+    M5.Lcd.fillRect(175, y, SCREEN_WIDTH - 185, 8, COLOR_BG);
     M5.Lcd.setCursor(175, y);
     M5.Lcd.setTextColor(COLOR_TEXT);
     M5.Lcd.print(net.ip.c_str());
@@ -446,6 +542,52 @@ void UI::drawQrCodeScreen(BLEMonitorClient& ble) {
     int urlW = strlen(url5000) * 6;
     M5.Lcd.setCursor((SCREEN_WIDTH - urlW) / 2, urlY);
     M5.Lcd.printf("IP: %s", net.ip.c_str());
+}
+
+// === Settings Screen ===
+void UI::drawSettings() {
+    drawScreenTitle("Settings");
+    int y = HEADER_HEIGHT + 50;
+
+    // Sound toggle
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setTextColor(COLOR_TEXT);
+    M5.Lcd.setCursor(10, y);
+    M5.Lcd.print("Sound Alerts:");
+    M5.Lcd.fillRect(130, y, 60, 8, COLOR_BG);
+    M5.Lcd.setCursor(130, y);
+    if (soundEnabled) {
+        M5.Lcd.setTextColor(COLOR_GOOD);
+        M5.Lcd.print("ON");
+    } else {
+        M5.Lcd.setTextColor(COLOR_BAD);
+        M5.Lcd.print("OFF");
+    }
+    y += 24;
+
+    M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+    M5.Lcd.setCursor(10, y);
+    M5.Lcd.print("Press [Select] to toggle sound");
+    y += 30;
+
+    // Alert thresholds info
+    M5.Lcd.setTextColor(COLOR_ACCENT);
+    M5.Lcd.setCursor(10, y);
+    M5.Lcd.print("--- Alert Thresholds ---");
+    y += 16;
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), ">= %.0f%%", ALERT_CPU_USAGE);
+    drawKeyValue(10, y, "CPU Usage:", buf, COLOR_WARN);
+    y += 16;
+    snprintf(buf, sizeof(buf), ">= %.0f C", ALERT_CPU_TEMP);
+    drawKeyValue(10, y, "CPU Temp:", buf, COLOR_WARN);
+    y += 16;
+    snprintf(buf, sizeof(buf), ">= %.0f%%", ALERT_RAM_USAGE);
+    drawKeyValue(10, y, "RAM Usage:", buf, COLOR_WARN);
+    y += 16;
+    snprintf(buf, sizeof(buf), ">= %.0f%%", ALERT_STORAGE_USAGE);
+    drawKeyValue(10, y, "Storage:", buf, COLOR_WARN);
 }
 
 // === Registration Screen ===

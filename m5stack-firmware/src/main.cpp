@@ -1,4 +1,7 @@
 #include <M5Stack.h>
+#include <WiFi.h>
+#include <esp_wifi.h>
+#include <esp_bt.h>
 #include "ble_client.h"
 #include "ui.h"
 #include "config.h"
@@ -7,13 +10,38 @@ BLEMonitorClient bleClient;
 UI ui;
 
 unsigned long lastReconnectAttempt = 0;
+bool prevConnected = false;
+
+void disableUnusedPeripherals() {
+    // WiFi無効化（BLEのみ使用）
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    esp_wifi_stop();
+    esp_wifi_deinit();
+
+    // BLE Classic無効化（BLE LEのみ使用）
+    esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+
+    Serial.println("WiFi and BT Classic disabled for power saving");
+}
 
 void setup() {
-    M5.begin(true, false, true, true);  // LCD, SD, Serial, I2C
+    M5.begin(true, false, true, false);  // LCD, SD(off), Serial, I2C(off)
     M5.Power.begin();
-    M5.Lcd.setBrightness(80);
+    M5.Lcd.setBrightness(LCD_BRIGHTNESS);
+
+    // スピーカー初期化
+    M5.Speaker.begin();
+    M5.Speaker.setVolume(3);
 
     Serial.println("M5Stack RPi Monitor starting...");
+
+    // 省電力: 未使用ペリフェラルを無効化
+    disableUnusedPeripherals();
+
+    // CPU周波数を160MHzに下げる（デフォルト240MHz）
+    setCpuFrequencyMhz(160);
+    Serial.printf("CPU freq: %d MHz\n", getCpuFrequencyMhz());
 
     bleClient.init();
     ui.init();
@@ -27,11 +55,14 @@ void loop() {
 
     // Button handling
     if (M5.BtnA.wasPressed()) {
-        if (ui.getCurrentScreen() == Screen::REGISTRATION && bleClient.getFoundDeviceCount() > 0) {
-            // Registration画面ではBtnAでリスト上移動 or キャンセル
-            ui.buttonAction(bleClient);  // handled in registration context
+        int devCount = bleClient.getFoundDeviceCount();
+        if (ui.getCurrentScreen() == Screen::REGISTRATION &&
+            !bleClient.isConnected() && devCount > 0) {
+            // デバイスリスト表示中: 上移動 or confirmキャンセル
+            ui.registrationBtnA();
+        } else {
+            ui.prevScreen();
         }
-        ui.prevScreen();
     }
 
     if (M5.BtnB.wasPressed()) {
@@ -41,7 +72,25 @@ void loop() {
     }
 
     if (M5.BtnC.wasPressed()) {
-        ui.nextScreen();
+        int devCount = bleClient.getFoundDeviceCount();
+        if (ui.getCurrentScreen() == Screen::REGISTRATION &&
+            !bleClient.isConnected() && devCount > 0) {
+            // デバイスリスト表示中: 下移動
+            ui.registrationBtnC(devCount);
+        } else {
+            ui.nextScreen();
+        }
+    }
+
+    // BLE接続状態の変化を検出して音を鳴らす
+    bool nowConnected = bleClient.isConnected();
+    if (nowConnected != prevConnected) {
+        if (nowConnected) {
+            ui.onBleConnected();
+        } else {
+            ui.onBleDisconnected();
+        }
+        prevConnected = nowConnected;
     }
 
     // スキャン完了チェック
@@ -76,6 +125,9 @@ void loop() {
 
     // UI更新
     ui.update(bleClient);
+
+    // アラートチェック（UI更新後、最新データで判定）
+    ui.checkAlerts(bleClient);
 
     delay(50);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <M5Stack.h>
+#include <Preferences.h>
 #include "ble_client.h"
 #include "config.h"
 
@@ -12,6 +13,7 @@ enum class Screen {
     NETWORK,
     SYSTEM_INFO,
     QR_CODE,
+    SETTINGS,
     REGISTRATION,
     SCREEN_COUNT
 };
@@ -23,17 +25,42 @@ public:
     void nextScreen();
     void prevScreen();
     void buttonAction(BLEMonitorClient& ble);
+    void registrationBtnA();
+    void registrationBtnC(int deviceCount);
     void setNeedsRedraw();
     Screen getCurrentScreen();
+
+    // サウンド通知
+    void playTone(int freq, int duration);
+    void onBleConnected();
+    void onBleDisconnected();
+    void checkAlerts(BLEMonitorClient& ble);
+
+    bool isSoundEnabled() { return soundEnabled; }
 
 private:
     Screen currentScreen = Screen::DASHBOARD;
     bool needsFullRedraw = true;
+    bool lastConnected = false;
     unsigned long lastUpdate = 0;
 
     // Registration screen state
     int regSelectedDevice = 0;
     bool regConfirmMode = false;
+
+    // Settings
+    bool soundEnabled = true;
+    int settingsSelection = 0;
+    Preferences uiPrefs;
+
+    // Alert cooldowns
+    unsigned long lastAlertCpu = 0;
+    unsigned long lastAlertTemp = 0;
+    unsigned long lastAlertRam = 0;
+    unsigned long lastAlertStorage = 0;
+
+    void loadSettings();
+    void saveSettings();
 
     void drawHeader(BLEMonitorClient& ble);
     void drawFooter();
@@ -45,6 +72,7 @@ private:
     void drawSystemInfo(BLEMonitorClient& ble);
     void drawRegistration(BLEMonitorClient& ble);
     void drawQrCodeScreen(BLEMonitorClient& ble);
+    void drawSettings();
     void drawDisconnected(BLEMonitorClient& ble);
 
     // Drawing helpers

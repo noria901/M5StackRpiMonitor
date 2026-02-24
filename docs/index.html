@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RPi Monitor – Web BLE</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    header h1 { font-size: 1.25rem; color: var(--accent); }
+    #status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    #status-dot.connected { background: var(--green); animation: pulse 2s infinite; }
+    #status-dot.error { background: var(--red); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+    #status-text { color: var(--muted); font-size: 0.85rem; }
+    #connect-btn {
+      margin-left: auto;
+      padding: 0.5rem 1.25rem;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    #connect-btn:hover { opacity: 0.85; }
+    #connect-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.1rem 1.25rem;
+    }
+    .card-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 0.9rem;
+    }
+    .metric { display: flex; flex-direction: column; margin-bottom: 0.75rem; }
+    .metric:last-child { margin-bottom: 0; }
+    .metric-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .metric-value { font-size: 1.05rem; color: var(--text); }
+    .metric-value.big { font-size: 1.6rem; font-weight: 700; }
+
+    .bar-wrap {
+      background: var(--border);
+      border-radius: 4px;
+      height: 6px;
+      margin-top: 0.35rem;
+      overflow: hidden;
+    }
+    .bar {
+      height: 100%;
+      border-radius: 4px;
+      transition: width .5s ease;
+      background: var(--green);
+    }
+    .bar.warn { background: var(--yellow); }
+    .bar.danger { background: var(--red); }
+
+    #no-ble {
+      margin-top: 3rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.8;
+    }
+    #no-ble a { color: var(--accent); }
+
+    .placeholder {
+      color: var(--border);
+      font-size: 0.9rem;
+    }
+    footer {
+      margin-top: 2rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div id="status-dot"></div>
+  <span id="status-text">未接続</span>
+  <button id="connect-btn">Connect</button>
+</header>
+<h1 style="color:var(--accent);font-size:1rem;margin-bottom:1.25rem;">📡 RPi Monitor <span style="color:var(--muted);font-weight:400;">– Web BLE Dashboard</span></h1>
+
+<div id="no-ble" style="display:none">
+  <p>このブラウザは Web Bluetooth に対応していません。</p>
+  <p>Chrome / Edge をお使いください。<br>
+  iOS Safari は非対応です。</p>
+  <p style="margin-top:1rem;"><a href="https://caniuse.com/web-bluetooth" target="_blank">ブラウザ対応状況</a></p>
+</div>
+
+<div class="grid" id="dashboard">
+  <!-- CPU -->
+  <div class="card" id="card-cpu">
+    <div class="card-title">CPU</div>
+    <div class="metric">
+      <span class="metric-label">使用率</span>
+      <span class="metric-value big" id="cpu-usage">--</span>
+      <div class="bar-wrap"><div class="bar" id="bar-cpu" style="width:0%"></div></div>
+    </div>
+    <div class="metric">
+      <span class="metric-label">温度</span>
+      <span class="metric-value" id="cpu-temp">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">周波数</span>
+      <span class="metric-value" id="cpu-freq">--</span>
+    </div>
+  </div>
+
+  <!-- Memory -->
+  <div class="card" id="card-mem">
+    <div class="card-title">Memory</div>
+    <div class="metric">
+      <span class="metric-label">RAM 使用量</span>
+      <span class="metric-value big" id="ram-pct">--</span>
+      <div class="bar-wrap"><div class="bar" id="bar-ram" style="width:0%"></div></div>
+    </div>
+    <div class="metric">
+      <span class="metric-label">RAM</span>
+      <span class="metric-value" id="ram-detail">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Swap</span>
+      <span class="metric-value" id="swap-detail">--</span>
+    </div>
+  </div>
+
+  <!-- Storage -->
+  <div class="card" id="card-storage">
+    <div class="card-title">Storage</div>
+    <div class="metric">
+      <span class="metric-label">使用率</span>
+      <span class="metric-value big" id="storage-pct">--</span>
+      <div class="bar-wrap"><div class="bar" id="bar-storage" style="width:0%"></div></div>
+    </div>
+    <div class="metric">
+      <span class="metric-label">使用 / 合計</span>
+      <span class="metric-value" id="storage-detail">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">空き</span>
+      <span class="metric-value" id="storage-free">--</span>
+    </div>
+  </div>
+
+  <!-- Network -->
+  <div class="card" id="card-net">
+    <div class="card-title">Network</div>
+    <div class="metric">
+      <span class="metric-label">IP アドレス</span>
+      <span class="metric-value big" id="net-ip">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">WiFi SSID</span>
+      <span class="metric-value" id="net-ssid">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">WiFi 信号強度</span>
+      <span class="metric-value" id="net-signal">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Hotspot</span>
+      <span class="metric-value" id="net-hotspot">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">MAC</span>
+      <span class="metric-value" id="net-mac">--</span>
+    </div>
+  </div>
+
+  <!-- System -->
+  <div class="card" id="card-sys">
+    <div class="card-title">System</div>
+    <div class="metric">
+      <span class="metric-label">ホスト名</span>
+      <span class="metric-value big" id="sys-hostname">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">稼働時間</span>
+      <span class="metric-value" id="sys-uptime">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">OS</span>
+      <span class="metric-value" id="sys-os">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">カーネル</span>
+      <span class="metric-value" id="sys-kernel">--</span>
+    </div>
+  </div>
+</div>
+
+<footer style="margin-top:2rem;">
+  <a href="https://github.com/noria901/M5StackRpiMonitor" target="_blank">M5StackRpiMonitor</a>
+  &nbsp;|&nbsp; Web BLE Dashboard &nbsp;|&nbsp;
+  Chrome / Edge のみ対応
+</footer>
+
+<script>
+// ---- UUIDs ----------------------------------------------------------------
+const SERVICE_UUID  = '12345678-1234-5678-1234-56789abcdef0';
+const CHAR_CPU      = '12345678-1234-5678-1234-56789abcdef1';
+const CHAR_MEMORY   = '12345678-1234-5678-1234-56789abcdef2';
+const CHAR_STORAGE  = '12345678-1234-5678-1234-56789abcdef3';
+const CHAR_NETWORK  = '12345678-1234-5678-1234-56789abcdef4';
+const CHAR_SYSTEM   = '12345678-1234-5678-1234-56789abcdef5';
+
+// ---- State ----------------------------------------------------------------
+let device = null;
+let server = null;
+
+// ---- DOM refs -------------------------------------------------------------
+const dot    = document.getElementById('status-dot');
+const stText = document.getElementById('status-text');
+const btn    = document.getElementById('connect-btn');
+
+// ---- Web Bluetooth availability check ------------------------------------
+if (!navigator.bluetooth) {
+  document.getElementById('no-ble').style.display = 'block';
+  document.getElementById('dashboard').style.display = 'none';
+  btn.disabled = true;
+}
+
+// ---- Helpers --------------------------------------------------------------
+function setStatus(state, text) {
+  dot.className = state;   // '', 'connected', 'error'
+  stText.textContent = text;
+}
+
+function decode(value) {
+  return JSON.parse(new TextDecoder().decode(value.buffer));
+}
+
+function fmtBytes(mb) {
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+  return mb.toFixed(0) + ' MB';
+}
+
+function fmtUptime(secs) {
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const parts = [];
+  if (d) parts.push(d + 'd');
+  if (h) parts.push(h + 'h');
+  parts.push(m + 'm');
+  return parts.join(' ');
+}
+
+function barClass(pct) {
+  if (pct >= 90) return 'danger';
+  if (pct >= 70) return 'warn';
+  return '';
+}
+
+function setBar(id, pct) {
+  const el = document.getElementById(id);
+  el.style.width = pct + '%';
+  el.className = 'bar ' + barClass(pct);
+}
+
+// ---- Data handlers --------------------------------------------------------
+function onCpu(event) {
+  const d = decode(event.target.value);
+  const pct = d.usage.toFixed(1);
+  document.getElementById('cpu-usage').textContent = pct + '%';
+  document.getElementById('cpu-temp').textContent  = d.temp.toFixed(1) + ' °C';
+  document.getElementById('cpu-freq').textContent  = d.freq + ' MHz';
+  setBar('bar-cpu', d.usage);
+}
+
+function onMemory(event) {
+  const d = decode(event.target.value);
+  const pct = (d.ram_used / d.ram_total * 100).toFixed(1);
+  document.getElementById('ram-pct').textContent    = pct + '%';
+  document.getElementById('ram-detail').textContent =
+    fmtBytes(d.ram_used) + ' / ' + fmtBytes(d.ram_total);
+  const swapPct = d.swap_total > 0
+    ? (d.swap_used / d.swap_total * 100).toFixed(0) + '%'
+    : '---';
+  document.getElementById('swap-detail').textContent =
+    d.swap_total > 0
+      ? fmtBytes(d.swap_used) + ' / ' + fmtBytes(d.swap_total) + ' (' + swapPct + ')'
+      : 'なし';
+  setBar('bar-ram', parseFloat(pct));
+}
+
+function onStorage(event) {
+  const d = decode(event.target.value);
+  const pct = (d.used / d.total * 100).toFixed(1);
+  document.getElementById('storage-pct').textContent    = pct + '%';
+  document.getElementById('storage-detail').textContent =
+    fmtBytes(d.used) + ' / ' + fmtBytes(d.total);
+  document.getElementById('storage-free').textContent   = fmtBytes(d.free);
+  setBar('bar-storage', parseFloat(pct));
+}
+
+function onNetwork(event) {
+  const d = decode(event.target.value);
+  document.getElementById('net-ip').textContent      = d.ip || '--';
+  document.getElementById('net-ssid').textContent    = d.wifi_ssid || '--';
+  document.getElementById('net-signal').textContent  = d.wifi_signal + ' dBm';
+  document.getElementById('net-hotspot').textContent = d.hotspot
+    ? '有効 (' + (d.hotspot_ssid || '--') + ')'
+    : '無効';
+  document.getElementById('net-mac').textContent     = d.mac || '--';
+}
+
+function onSystem(event) {
+  const d = decode(event.target.value);
+  document.getElementById('sys-hostname').textContent = d.hostname || '--';
+  document.getElementById('sys-uptime').textContent   = fmtUptime(d.uptime);
+  document.getElementById('sys-os').textContent       = d.os || '--';
+  document.getElementById('sys-kernel').textContent   = d.kernel || '--';
+}
+
+// ---- Subscribe helper -----------------------------------------------------
+async function subscribe(service, uuid, handler) {
+  const char = await service.getCharacteristic(uuid);
+  char.addEventListener('characteristicvaluechanged', handler);
+  await char.startNotifications();
+  // 初回即時読み取り
+  const value = await char.readValue();
+  handler({ target: { value } });
+  return char;
+}
+
+// ---- Connect / Disconnect -------------------------------------------------
+async function connect() {
+  try {
+    setStatus('', '接続中...');
+    btn.disabled = true;
+
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID],
+    });
+
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+
+    await subscribe(service, CHAR_CPU,     onCpu);
+    await subscribe(service, CHAR_MEMORY,  onMemory);
+    await subscribe(service, CHAR_STORAGE, onStorage);
+    await subscribe(service, CHAR_NETWORK, onNetwork);
+    await subscribe(service, CHAR_SYSTEM,  onSystem);
+
+    setStatus('connected', device.name + ' に接続中');
+    btn.textContent = 'Disconnect';
+    btn.disabled = false;
+
+  } catch (err) {
+    setStatus('error', 'エラー: ' + err.message);
+    btn.textContent = 'Connect';
+    btn.disabled = false;
+    device = null;
+    server = null;
+  }
+}
+
+function disconnect() {
+  if (device && device.gatt.connected) {
+    device.gatt.disconnect();
+  }
+}
+
+function onDisconnected() {
+  setStatus('error', '切断されました');
+  btn.textContent = 'Connect';
+  btn.disabled = false;
+  device = null;
+  server = null;
+}
+
+btn.addEventListener('click', () => {
+  if (!device || !device.gatt.connected) {
+    connect();
+  } else {
+    disconnect();
+  }
+});
+</script>
+</body>
+</html>
