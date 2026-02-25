@@ -44,7 +44,6 @@
     }
     #status-text { color: var(--muted); font-size: 0.85rem; }
     #connect-btn {
-      margin-left: auto;
       padding: 0.5rem 1.25rem;
       background: var(--accent);
       color: #000;
@@ -125,7 +124,8 @@
 <header>
   <div id="status-dot"></div>
   <span id="status-text">未接続</span>
-  <button id="connect-btn">Connect</button>
+  <span id="last-update" style="color:var(--muted);font-size:0.75rem;margin-left:auto;">最終更新: --:--:--</span>
+  <button id="connect-btn" style="margin-left:0.75rem;">Connect</button>
 </header>
 <h1 style="color:var(--accent);font-size:1rem;margin-bottom:1.25rem;">📡 RPi Monitor <span style="color:var(--muted);font-weight:400;">– Web BLE Dashboard</span></h1>
 
@@ -269,6 +269,17 @@ if (!navigator.bluetooth) {
   btn.disabled = true;
 }
 
+// ---- DOM refs (extra) -----------------------------------------------------
+const lastUpdateEl = document.getElementById('last-update');
+
+function updateTimestamp() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  lastUpdateEl.textContent = '最終更新: ' + hh + ':' + mm + ':' + ss;
+}
+
 // ---- Helpers --------------------------------------------------------------
 function setStatus(state, text) {
   dot.className = state;   // '', 'connected', 'error'
@@ -315,6 +326,7 @@ function onCpu(event) {
   document.getElementById('cpu-temp').textContent  = d.temp.toFixed(1) + ' °C';
   document.getElementById('cpu-freq').textContent  = d.freq + ' MHz';
   setBar('bar-cpu', d.usage);
+  updateTimestamp();
 }
 
 function onMemory(event) {
@@ -331,6 +343,7 @@ function onMemory(event) {
       ? fmtBytes(d.swap_used) + ' / ' + fmtBytes(d.swap_total) + ' (' + swapPct + ')'
       : 'なし';
   setBar('bar-ram', parseFloat(pct));
+  updateTimestamp();
 }
 
 function onStorage(event) {
@@ -341,6 +354,7 @@ function onStorage(event) {
     fmtBytes(d.used) + ' / ' + fmtBytes(d.total);
   document.getElementById('storage-free').textContent   = fmtBytes(d.free);
   setBar('bar-storage', parseFloat(pct));
+  updateTimestamp();
 }
 
 function onNetwork(event) {
@@ -352,6 +366,7 @@ function onNetwork(event) {
     ? '有効 (' + (d.hotspot_ssid || '--') + ')'
     : '無効';
   document.getElementById('net-mac').textContent     = d.mac || '--';
+  updateTimestamp();
 }
 
 function onSystem(event) {
@@ -360,6 +375,7 @@ function onSystem(event) {
   document.getElementById('sys-uptime').textContent   = fmtUptime(d.uptime);
   document.getElementById('sys-os').textContent       = d.os || '--';
   document.getElementById('sys-kernel').textContent   = d.kernel || '--';
+  updateTimestamp();
 }
 
 // ---- Subscribe helper -----------------------------------------------------
@@ -418,6 +434,7 @@ function onDisconnected() {
   setStatus('error', '切断されました');
   btn.textContent = 'Connect';
   btn.disabled = false;
+  lastUpdateEl.textContent = '最終更新: --:--:--';
   device = null;
   server = null;
 }
