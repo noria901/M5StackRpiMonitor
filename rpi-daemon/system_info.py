@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+from datetime import datetime
 import psutil
 
 
@@ -177,6 +178,7 @@ def get_system_info() -> dict:
             pass
 
     info["kernel"] = os.uname().release
+    info["time"] = datetime.now().strftime("%H:%M:%S")
 
     return info
 

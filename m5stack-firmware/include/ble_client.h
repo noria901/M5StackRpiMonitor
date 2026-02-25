@@ -48,6 +48,7 @@ struct SystemInfo {
     unsigned long uptime = 0;
     String os = "";
     String kernel = "";
+    String time = "";
 };
 
 class BLEMonitorClient {
@@ -72,6 +73,7 @@ public:
     SystemInfo getSystemInfo();
 
     String getServerName();
+    unsigned long getLastDataMillis();
     int getFoundDeviceCount();
     String getFoundDeviceName(int index);
     BLEAdvertisedDevice* getFoundDevice(int index);
@@ -91,6 +93,7 @@ private:
     String serverName = "";
     std::vector<BLEAdvertisedDevice> foundDevices;
     unsigned long scanStartTime = 0;
+    unsigned long lastDataMillis = 0;
     Preferences prefs;
 
     bool readCharacteristic(const char* uuid, String& result);

@@ -272,12 +272,22 @@ if (!navigator.bluetooth) {
 // ---- DOM refs (extra) -----------------------------------------------------
 const lastUpdateEl = document.getElementById('last-update');
 
-function updateTimestamp() {
+let lastRpiTime = '';
+
+function updateTimestamp(rpiTime) {
+  if (rpiTime !== undefined && rpiTime !== '') {
+    lastRpiTime = rpiTime;
+  }
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, '0');
   const mm = String(now.getMinutes()).padStart(2, '0');
   const ss = String(now.getSeconds()).padStart(2, '0');
-  lastUpdateEl.textContent = '最終更新: ' + hh + ':' + mm + ':' + ss;
+  const local = hh + ':' + mm + ':' + ss;
+  if (lastRpiTime) {
+    lastUpdateEl.textContent = '最終更新: ' + local + ' (RPi: ' + lastRpiTime + ')';
+  } else {
+    lastUpdateEl.textContent = '最終更新: ' + local;
+  }
 }
 
 // ---- Helpers --------------------------------------------------------------
@@ -375,7 +385,7 @@ function onSystem(event) {
   document.getElementById('sys-uptime').textContent   = fmtUptime(d.uptime);
   document.getElementById('sys-os').textContent       = d.os || '--';
   document.getElementById('sys-kernel').textContent   = d.kernel || '--';
-  updateTimestamp();
+  updateTimestamp(d.time || '');
 }
 
 // ---- Subscribe helper -----------------------------------------------------
@@ -435,6 +445,7 @@ function onDisconnected() {
   btn.textContent = 'Connect';
   btn.disabled = false;
   lastUpdateEl.textContent = '最終更新: --:--:--';
+  lastRpiTime = '';
   device = null;
   server = null;
 }

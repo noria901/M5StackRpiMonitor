@@ -197,17 +197,35 @@ void UI::drawHeader(BLEMonitorClient& ble) {
     M5.Lcd.fillRect(0, 0, SCREEN_WIDTH, HEADER_HEIGHT, COLOR_HEADER_BG);
     M5.Lcd.setTextColor(COLOR_ACCENT);
     M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(4, 6);
+    M5.Lcd.setCursor(4, 2);
     M5.Lcd.print("RPi Monitor");
 
-    // 接続状態
-    M5.Lcd.setCursor(200, 6);
+    // 接続状態 (1行目右側)
     if (ble.isConnected()) {
         M5.Lcd.setTextColor(COLOR_GOOD);
+        M5.Lcd.setCursor(200, 2);
         M5.Lcd.printf("BLE: %s", ble.getServerName().c_str());
     } else {
         M5.Lcd.setTextColor(COLOR_BAD);
+        M5.Lcd.setCursor(200, 2);
         M5.Lcd.print("BLE: Disconnected");
+    }
+
+    // 最終更新時刻 (2行目)
+    if (ble.isConnected() && ble.getLastDataMillis() > 0) {
+        M5.Lcd.setCursor(4, 14);
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+
+        auto sys = ble.getSystemInfo();
+        unsigned long elapsed = (millis() - ble.getLastDataMillis()) / 1000;
+
+        if (sys.time.length() > 0) {
+            // RPi時刻あり: "Updated: 14:32:05 (3s ago)"
+            M5.Lcd.printf("Updated: %s (%lus ago)", sys.time.c_str(), elapsed);
+        } else {
+            // RPi時刻なし: フォールバック相対表示
+            M5.Lcd.printf("Updated: %lus ago", elapsed);
+        }
     }
 }
 

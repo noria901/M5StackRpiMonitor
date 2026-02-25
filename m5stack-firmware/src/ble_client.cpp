@@ -167,6 +167,7 @@ bool BLEMonitorClient::readAll() {
         parseSystemInfo(data);
     }
 
+    lastDataMillis = millis();
     return true;
 }
 
@@ -234,6 +235,7 @@ void BLEMonitorClient::parseSystemInfo(const String& json) {
         systemInfo.uptime = doc["uptime"] | 0UL;
         systemInfo.os = doc["os"] | "";
         systemInfo.kernel = doc["kernel"] | "";
+        systemInfo.time = doc["time"] | "";
     }
 }
 
@@ -244,6 +246,7 @@ NetworkInfo BLEMonitorClient::getNetworkInfo() { return networkInfo; }
 SystemInfo BLEMonitorClient::getSystemInfo() { return systemInfo; }
 
 String BLEMonitorClient::getServerName() { return serverName; }
+unsigned long BLEMonitorClient::getLastDataMillis() { return lastDataMillis; }
 int BLEMonitorClient::getFoundDeviceCount() { return foundDevices.size(); }
 String BLEMonitorClient::getFoundDeviceName(int index) {
     if (index < 0 || index >= (int)foundDevices.size()) return "";
