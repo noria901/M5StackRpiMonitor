@@ -49,6 +49,7 @@ struct SystemInfo {
     String os = "";
     String kernel = "";
     String time = "";
+    String platform = "";
 };
 
 class BLEMonitorClient {

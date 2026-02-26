@@ -198,7 +198,12 @@ void UI::drawHeader(BLEMonitorClient& ble) {
     M5.Lcd.setTextColor(COLOR_ACCENT);
     M5.Lcd.setTextSize(1);
     M5.Lcd.setCursor(4, 2);
-    M5.Lcd.print("RPi Monitor");
+    auto sys = ble.getSystemInfo();
+    if (sys.platform == "jetson") {
+        M5.Lcd.print("Jetson Monitor");
+    } else {
+        M5.Lcd.print("RPi Monitor");
+    }
 
     // 接続状態 (1行目右側)
     if (ble.isConnected()) {
@@ -216,7 +221,6 @@ void UI::drawHeader(BLEMonitorClient& ble) {
         M5.Lcd.setCursor(4, 14);
         M5.Lcd.setTextColor(COLOR_TEXT_DIM);
 
-        auto sys = ble.getSystemInfo();
         unsigned long elapsed = (millis() - ble.getLastDataMillis()) / 1000;
 
         if (sys.time.length() > 0) {

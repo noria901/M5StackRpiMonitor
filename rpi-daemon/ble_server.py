@@ -12,6 +12,7 @@ from dbus_next import Variant, BusType
 from dbus_next.constants import PropertyAccess
 
 from system_info import (
+    detect_platform,
     get_cpu_info,
     get_memory_info,
     get_storage_info,
@@ -56,8 +57,14 @@ def save_registered_devices(devices: list) -> None:
         json.dump(devices, f, indent=2)
 
 
+def _ble_local_name() -> str:
+    """Return BLE local name based on detected platform."""
+    platform = detect_platform()
+    return "Jetson-Monitor" if platform == "jetson" else "RPi-Monitor"
+
+
 class Advertisement(ServiceInterface):
-    """BLE advertisement for the RPi Monitor service."""
+    """BLE advertisement for the monitor service."""
 
     def __init__(self, index: int):
         self._path = f"/org/bluez/rpimonitor/advertisement{index}"
@@ -73,7 +80,7 @@ class Advertisement(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def LocalName(self) -> "s":
-        return "RPi-Monitor"
+        return _ble_local_name()
 
     @dbus_property(access=PropertyAccess.READ)
     def Includes(self) -> "as":
@@ -286,7 +293,7 @@ class BLEServer:
         adapter = proxy.get_interface(ADAPTER_IFACE)
         await adapter.set_powered(True)  # type: ignore
         await adapter.set_discoverable(True)  # type: ignore
-        await adapter.set_alias("RPi-Monitor")  # type: ignore
+        await adapter.set_alias(_ble_local_name())  # type: ignore
 
         # Register GATT manager
         gatt_manager = proxy.get_interface(GATT_MANAGER_IFACE)

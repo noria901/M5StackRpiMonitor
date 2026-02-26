@@ -1,8 +1,9 @@
 # CLAUDE.md - M5Stack RPi Status Monitor
 
 ## Project Overview
-M5Stack Core を使った Raspberry Pi ステータスモニター。
-RPi上の常駐プロセスがBLE経由でM5Stackにシステム情報を送信し、M5Stack上でリアルタイム表示する。
+M5Stack Core を使った Raspberry Pi / Jetson Orin ステータスモニター。
+ホスト上の常駐プロセスがBLE経由でM5Stackにシステム情報を送信し、M5Stack上でリアルタイム表示する。
+プラットフォームは自動検出され、BLE広告名・UI表示が動的に切り替わる。
 
 ## Architecture
 ```
@@ -141,7 +142,7 @@ JSON encoded UTF-8 strings (max 512 bytes per characteristic):
 {"wifi_ssid": "MyNet", "wifi_signal": -45, "ip": "192.168.1.10", "hotspot": false, "hotspot_ssid": "", "mac": "AA:BB:CC:DD:EE:FF"}
 
 // System Info
-{"hostname": "raspberrypi", "uptime": 86400, "os": "Raspberry Pi OS", "kernel": "6.1.0"}
+{"hostname": "raspberrypi", "uptime": 86400, "os": "Raspberry Pi OS", "kernel": "6.1.0", "time": "14:32:05", "platform": "rpi"}
 
 // Registration (Write: M5Stack→RPi)
 {"action": "register", "device_name": "M5Stack-RpiMon", "mac": "AA:BB:CC:DD:EE:FF"}

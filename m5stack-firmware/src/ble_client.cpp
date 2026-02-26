@@ -236,6 +236,7 @@ void BLEMonitorClient::parseSystemInfo(const String& json) {
         systemInfo.os = doc["os"] | "";
         systemInfo.kernel = doc["kernel"] | "";
         systemInfo.time = doc["time"] | "";
+        systemInfo.platform = doc["platform"] | "";
     }
 }
 
