@@ -12,6 +12,7 @@ enum class Screen {
     STORAGE_DETAIL,
     NETWORK,
     SYSTEM_INFO,
+    SERVICES,
     QR_CODE,
     SETTINGS,
     REGISTRATION,
@@ -27,6 +28,8 @@ public:
     void buttonAction(BLEMonitorClient& ble);
     void registrationBtnA();
     void registrationBtnC(int deviceCount);
+    void servicesBtnA();
+    void servicesBtnC(int serviceCount);
     void setNeedsRedraw();
     Screen getCurrentScreen();
 
@@ -47,6 +50,10 @@ private:
     // Registration screen state
     int regSelectedDevice = 0;
     bool regConfirmMode = false;
+
+    // Services screen state
+    int svcSelectedIndex = 0;
+    bool svcConfirmMode = false;
 
     // Settings
     bool soundEnabled = true;
@@ -71,6 +78,7 @@ private:
     void drawNetwork(BLEMonitorClient& ble);
     void drawSystemInfo(BLEMonitorClient& ble);
     void drawRegistration(BLEMonitorClient& ble);
+    void drawServices(BLEMonitorClient& ble);
     void drawQrCodeScreen(BLEMonitorClient& ble);
     void drawSettings();
     void drawDisconnected(BLEMonitorClient& ble);

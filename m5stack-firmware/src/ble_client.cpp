@@ -166,6 +166,9 @@ bool BLEMonitorClient::readAll() {
     if (readCharacteristic(CHAR_SYSTEM_UUID, data)) {
         parseSystemInfo(data);
     }
+    if (readCharacteristic(CHAR_SERVICES_UUID, data)) {
+        parseServicesInfo(data);
+    }
 
     lastDataMillis = millis();
     return true;
@@ -240,11 +243,52 @@ void BLEMonitorClient::parseSystemInfo(const String& json) {
     }
 }
 
+void BLEMonitorClient::parseServicesInfo(const String& json) {
+    JsonDocument doc;
+    if (deserializeJson(doc, json) == DeserializationError::Ok) {
+        services.clear();
+        JsonArray arr = doc.as<JsonArray>();
+        for (JsonObject obj : arr) {
+            ServiceInfo si;
+            si.name = obj["name"] | "";
+            si.active = obj["active"] | false;
+            services.push_back(si);
+        }
+    }
+}
+
+bool BLEMonitorClient::writeCharacteristic(const char* uuid, const String& data) {
+    if (!isConnected() || !pService) return false;
+    BLERemoteCharacteristic* pChar = pService->getCharacteristic(BLEUUID(uuid));
+    if (pChar == nullptr) return false;
+    try {
+        pChar->writeValue(data.c_str(), data.length());
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool BLEMonitorClient::sendServiceControl(const String& serviceName, const String& action) {
+    JsonDocument doc;
+    doc["action"] = action;
+    doc["service"] = serviceName;
+    String json;
+    serializeJson(doc, json);
+    return writeCharacteristic(CHAR_SERVICES_UUID, json);
+}
+
 CpuInfo BLEMonitorClient::getCpuInfo() { return cpuInfo; }
 MemoryInfo BLEMonitorClient::getMemoryInfo() { return memoryInfo; }
 StorageInfo BLEMonitorClient::getStorageInfo() { return storageInfo; }
 NetworkInfo BLEMonitorClient::getNetworkInfo() { return networkInfo; }
 SystemInfo BLEMonitorClient::getSystemInfo() { return systemInfo; }
+
+int BLEMonitorClient::getServiceCount() { return services.size(); }
+ServiceInfo BLEMonitorClient::getServiceInfo(int index) {
+    if (index < 0 || index >= (int)services.size()) return ServiceInfo{};
+    return services[index];
+}
 
 String BLEMonitorClient::getServerName() { return serverName; }
 unsigned long BLEMonitorClient::getLastDataMillis() { return lastDataMillis; }

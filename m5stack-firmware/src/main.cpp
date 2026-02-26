@@ -55,10 +55,11 @@ void loop() {
 
     // Button handling
     if (M5.BtnA.wasPressed()) {
-        int devCount = bleClient.getFoundDeviceCount();
-        if (ui.getCurrentScreen() == Screen::REGISTRATION &&
-            !bleClient.isConnected() && devCount > 0) {
-            // デバイスリスト表示中: 上移動 or confirmキャンセル
+        if (ui.getCurrentScreen() == Screen::SERVICES &&
+            bleClient.isConnected() && bleClient.getServiceCount() > 0) {
+            ui.servicesBtnA();
+        } else if (ui.getCurrentScreen() == Screen::REGISTRATION &&
+            !bleClient.isConnected() && bleClient.getFoundDeviceCount() > 0) {
             ui.registrationBtnA();
         } else {
             ui.prevScreen();
@@ -72,11 +73,12 @@ void loop() {
     }
 
     if (M5.BtnC.wasPressed()) {
-        int devCount = bleClient.getFoundDeviceCount();
-        if (ui.getCurrentScreen() == Screen::REGISTRATION &&
-            !bleClient.isConnected() && devCount > 0) {
-            // デバイスリスト表示中: 下移動
-            ui.registrationBtnC(devCount);
+        if (ui.getCurrentScreen() == Screen::SERVICES &&
+            bleClient.isConnected() && bleClient.getServiceCount() > 0) {
+            ui.servicesBtnC(bleClient.getServiceCount());
+        } else if (ui.getCurrentScreen() == Screen::REGISTRATION &&
+            !bleClient.isConnected() && bleClient.getFoundDeviceCount() > 0) {
+            ui.registrationBtnC(bleClient.getFoundDeviceCount());
         } else {
             ui.nextScreen();
         }

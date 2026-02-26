@@ -52,6 +52,11 @@ struct SystemInfo {
     String platform = "";
 };
 
+struct ServiceInfo {
+    String name = "";
+    bool active = false;
+};
+
 class BLEMonitorClient {
 public:
     void init();
@@ -66,6 +71,10 @@ public:
 
     bool readAll();
     bool sendRegistration(const String& deviceName);
+    bool sendServiceControl(const String& serviceName, const String& action);
+
+    int getServiceCount();
+    ServiceInfo getServiceInfo(int index);
 
     CpuInfo getCpuInfo();
     MemoryInfo getMemoryInfo();
@@ -90,6 +99,7 @@ private:
     StorageInfo storageInfo;
     NetworkInfo networkInfo;
     SystemInfo systemInfo;
+    std::vector<ServiceInfo> services;
 
     String serverName = "";
     std::vector<BLEAdvertisedDevice> foundDevices;
@@ -103,4 +113,6 @@ private:
     void parseStorageInfo(const String& json);
     void parseNetworkInfo(const String& json);
     void parseSystemInfo(const String& json);
+    void parseServicesInfo(const String& json);
+    bool writeCharacteristic(const char* uuid, const String& data);
 };

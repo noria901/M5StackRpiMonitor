@@ -245,6 +245,60 @@ def get_all_info() -> dict:
     }
 
 
+CONFIG_FILE = "/etc/rpi-monitor/config.json"
+
+
+def load_config() -> dict:
+    """Load daemon config file."""
+    try:
+        with open(CONFIG_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"services": []}
+
+
+def get_services_info(service_names: list[str]) -> list[dict]:
+    """Get systemd service statuses for the given service names."""
+    results = []
+    for name in service_names:
+        active = False
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-active", name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            active = result.stdout.strip() == "active"
+        except Exception:
+            pass
+        results.append({"name": name, "active": active})
+    return results
+
+
+def control_service(name: str, action: str, allowed: list[str]) -> dict:
+    """Start or stop a systemd service.
+
+    Only services listed in 'allowed' can be controlled.
+    """
+    if name not in allowed:
+        return {"status": "error", "message": f"service '{name}' not in config"}
+    if action not in ("start", "stop", "restart"):
+        return {"status": "error", "message": f"invalid action '{action}'"}
+    try:
+        result = subprocess.run(
+            ["systemctl", action, name],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            return {"status": "ok"}
+        return {"status": "error", "message": result.stderr.strip()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 if __name__ == "__main__":
     info = get_all_info()
     print(json.dumps(info, indent=2))
