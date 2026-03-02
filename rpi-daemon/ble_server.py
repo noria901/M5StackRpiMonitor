@@ -21,6 +21,7 @@ from system_info import (
     get_network_info,
     get_system_info,
     load_config,
+    system_control,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ CHAR_NETWORK_UUID = "12345678-1234-5678-1234-56789abcdef4"
 CHAR_SYSTEM_UUID = "12345678-1234-5678-1234-56789abcdef5"
 CHAR_REGISTRATION_UUID = "12345678-1234-5678-1234-56789abcdef6"
 CHAR_SERVICES_UUID = "12345678-1234-5678-1234-56789abcdef7"
+CHAR_SYSTEM_CTRL_UUID = "12345678-1234-5678-1234-56789abcdef8"
 
 BLUEZ_SERVICE = "org.bluez"
 LE_ADVERTISING_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
@@ -238,6 +240,26 @@ class ServicesCharacteristic(Characteristic):
             self.set_value(json.dumps({"status": "error", "message": str(e)}))
 
 
+class SystemControlCharacteristic(Characteristic):
+    """BLE characteristic for system power control (reboot/shutdown)."""
+
+    def __init__(self, path: str):
+        super().__init__(CHAR_SYSTEM_CTRL_UUID, ["read", "write"], path)
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        data = bytes(value).decode("utf-8")
+        logger.info(f"System control request: {data}")
+        try:
+            req = json.loads(data)
+            action = req.get("action", "")
+            result = system_control(action)
+            self.set_value(json.dumps(result))
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"System control error: {e}")
+            self.set_value(json.dumps({"status": "error", "message": str(e)}))
+
+
 class GattService(ServiceInterface):
     """GATT Service definition."""
 
@@ -291,6 +313,7 @@ class BLEServer:
         sys_char = SystemCharacteristic(f"{service_path}/char4")
         reg_char = RegistrationCharacteristic(f"{service_path}/char5")
         svc_char = ServicesCharacteristic(f"{service_path}/char6", config)
+        sysctrl_char = SystemControlCharacteristic(f"{service_path}/char7")
 
         self.characteristics = [
             cpu_char,
@@ -300,6 +323,7 @@ class BLEServer:
             sys_char,
             reg_char,
             svc_char,
+            sysctrl_char,
         ]
 
         # Export objects on D-Bus

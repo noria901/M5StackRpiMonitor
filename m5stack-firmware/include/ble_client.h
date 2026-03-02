@@ -72,6 +72,7 @@ public:
     bool readAll();
     bool sendRegistration(const String& deviceName);
     bool sendServiceControl(const String& serviceName, const String& action);
+    bool sendPowerCommand(const String& action);
 
     int getServiceCount();
     ServiceInfo getServiceInfo(int index);

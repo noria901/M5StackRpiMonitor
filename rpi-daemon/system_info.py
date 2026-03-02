@@ -299,6 +299,22 @@ def control_service(name: str, action: str, allowed: list[str]) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def system_control(action: str) -> dict:
+    """Execute a system power command (reboot or shutdown)."""
+    if action not in ("reboot", "shutdown"):
+        return {"status": "error", "message": f"invalid action '{action}'"}
+    try:
+        cmd = ["systemctl", action]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            return {"status": "ok"}
+        return {"status": "error", "message": result.stderr.strip()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 if __name__ == "__main__":
     info = get_all_info()
     print(json.dumps(info, indent=2))

@@ -278,6 +278,14 @@ bool BLEMonitorClient::sendServiceControl(const String& serviceName, const Strin
     return writeCharacteristic(CHAR_SERVICES_UUID, json);
 }
 
+bool BLEMonitorClient::sendPowerCommand(const String& action) {
+    JsonDocument doc;
+    doc["action"] = action;
+    String json;
+    serializeJson(doc, json);
+    return writeCharacteristic(CHAR_SYSTEM_CTRL_UUID, json);
+}
+
 CpuInfo BLEMonitorClient::getCpuInfo() { return cpuInfo; }
 MemoryInfo BLEMonitorClient::getMemoryInfo() { return memoryInfo; }
 StorageInfo BLEMonitorClient::getStorageInfo() { return storageInfo; }

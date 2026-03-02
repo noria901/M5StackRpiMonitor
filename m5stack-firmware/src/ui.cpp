@@ -83,6 +83,7 @@ void UI::nextScreen() {
     needsFullRedraw = true;
     regConfirmMode = false;
     svcConfirmMode = false;
+    pwrConfirmMode = false;
 }
 
 void UI::prevScreen() {
@@ -91,6 +92,7 @@ void UI::prevScreen() {
     needsFullRedraw = true;
     regConfirmMode = false;
     svcConfirmMode = false;
+    pwrConfirmMode = false;
 }
 
 void UI::servicesBtnA() {
@@ -105,6 +107,22 @@ void UI::servicesBtnA() {
 void UI::servicesBtnC(int serviceCount) {
     if (!svcConfirmMode && svcSelectedIndex < serviceCount - 1) {
         svcSelectedIndex++;
+    }
+    needsFullRedraw = true;
+}
+
+void UI::powerBtnA() {
+    if (pwrConfirmMode) {
+        pwrConfirmMode = false;
+    } else if (pwrSelectedIndex > 0) {
+        pwrSelectedIndex--;
+    }
+    needsFullRedraw = true;
+}
+
+void UI::powerBtnC() {
+    if (!pwrConfirmMode && pwrSelectedIndex < 1) {
+        pwrSelectedIndex++;
     }
     needsFullRedraw = true;
 }
@@ -126,6 +144,20 @@ void UI::buttonAction(BLEMonitorClient& ble) {
             needsFullRedraw = true;
         } else {
             svcConfirmMode = true;
+            needsFullRedraw = true;
+        }
+        return;
+    }
+    if (currentScreen == Screen::POWER_MENU) {
+        if (!ble.isConnected()) return;
+        if (pwrConfirmMode) {
+            // 実行: reboot or shutdown
+            String action = (pwrSelectedIndex == 0) ? "reboot" : "shutdown";
+            ble.sendPowerCommand(action);
+            pwrConfirmMode = false;
+            needsFullRedraw = true;
+        } else {
+            pwrConfirmMode = true;
             needsFullRedraw = true;
         }
         return;
@@ -221,6 +253,7 @@ void UI::update(BLEMonitorClient& ble) {
             case Screen::NETWORK:       drawNetwork(ble); break;
             case Screen::SYSTEM_INFO:   drawSystemInfo(ble); break;
             case Screen::SERVICES:      drawServices(ble); break;
+            case Screen::POWER_MENU:    drawPowerMenu(ble); break;
             case Screen::QR_CODE:       drawQrCodeScreen(ble); break;
             case Screen::SETTINGS:      drawSettings(); break;
             case Screen::REGISTRATION:  drawRegistration(ble); break;
@@ -279,7 +312,7 @@ void UI::drawFooter() {
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
 
     const char* screenNames[] = {
-        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "Services", "QR", "Settings", "Register"
+        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "Services", "Power", "QR", "Settings", "Register"
     };
     int idx = (int)currentScreen;
 
@@ -721,6 +754,44 @@ void UI::drawServices(BLEMonitorClient& ble) {
         M5.Lcd.setTextColor(COLOR_TEXT_DIM);
         M5.Lcd.setCursor(10, y);
         M5.Lcd.print("[<Prev] Up  [Select] Toggle  [Next>] Down");
+    }
+}
+
+// === Power Menu Screen ===
+void UI::drawPowerMenu(BLEMonitorClient& ble) {
+    drawScreenTitle("Power");
+    int y = HEADER_HEIGHT + 50;
+
+    const char* items[] = {"Reboot", "Shutdown"};
+    const uint16_t icons[] = {COLOR_WARN, COLOR_BAD};
+
+    M5.Lcd.setTextSize(2);
+    for (int i = 0; i < 2; i++) {
+        if (i == pwrSelectedIndex) {
+            M5.Lcd.fillRect(8, y - 4, 304, 28, COLOR_ACCENT);
+            M5.Lcd.setTextColor(COLOR_BG);
+        } else {
+            M5.Lcd.setTextColor(icons[i]);
+        }
+        M5.Lcd.setCursor(20, y);
+        M5.Lcd.print(items[i]);
+        y += 40;
+    }
+
+    y += 10;
+    M5.Lcd.setTextSize(1);
+    if (pwrConfirmMode) {
+        M5.Lcd.setTextColor(COLOR_BAD);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.printf("%s RPi?", items[pwrSelectedIndex]);
+        y += 16;
+        M5.Lcd.setTextColor(COLOR_WARN);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("[<Prev] Cancel  [Select] Execute");
+    } else {
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("[<Prev] Up  [Select] Execute  [Next>] Down");
     }
 }
 
