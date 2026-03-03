@@ -98,33 +98,43 @@ void UI::prevScreen() {
 void UI::servicesBtnA() {
     if (svcConfirmMode) {
         svcConfirmMode = false;
+        needsFullRedraw = true;
     } else if (svcSelectedIndex > 0) {
         svcSelectedIndex--;
+        needsFullRedraw = true;
+    } else {
+        prevScreen();
     }
-    needsFullRedraw = true;
 }
 
 void UI::servicesBtnC(int serviceCount) {
     if (!svcConfirmMode && svcSelectedIndex < serviceCount - 1) {
         svcSelectedIndex++;
+        needsFullRedraw = true;
+    } else if (!svcConfirmMode) {
+        nextScreen();
     }
-    needsFullRedraw = true;
 }
 
 void UI::powerBtnA() {
     if (pwrConfirmMode) {
         pwrConfirmMode = false;
+        needsFullRedraw = true;
     } else if (pwrSelectedIndex > 0) {
         pwrSelectedIndex--;
+        needsFullRedraw = true;
+    } else {
+        prevScreen();
     }
-    needsFullRedraw = true;
 }
 
 void UI::powerBtnC() {
     if (!pwrConfirmMode && pwrSelectedIndex < 1) {
         pwrSelectedIndex++;
+        needsFullRedraw = true;
+    } else if (!pwrConfirmMode) {
+        nextScreen();
     }
-    needsFullRedraw = true;
 }
 
 void UI::buttonAction(BLEMonitorClient& ble) {
@@ -753,7 +763,7 @@ void UI::drawServices(BLEMonitorClient& ble) {
     } else {
         M5.Lcd.setTextColor(COLOR_TEXT_DIM);
         M5.Lcd.setCursor(10, y);
-        M5.Lcd.print("[<Prev] Up  [Select] Toggle  [Next>] Down");
+        M5.Lcd.print("[<] Up/Prev  [Sel] Toggle  [>] Down/Next");
     }
 }
 
@@ -791,7 +801,7 @@ void UI::drawPowerMenu(BLEMonitorClient& ble) {
     } else {
         M5.Lcd.setTextColor(COLOR_TEXT_DIM);
         M5.Lcd.setCursor(10, y);
-        M5.Lcd.print("[<Prev] Up  [Select] Execute  [Next>] Down");
+        M5.Lcd.print("[<] Up/Prev  [Sel] Execute  [>] Down/Next");
     }
 }
 
