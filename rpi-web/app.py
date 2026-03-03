@@ -15,6 +15,9 @@ app = Flask(__name__)
 DEVICES_FILE = os.environ.get(
     "DEVICES_FILE", "/var/lib/rpi-monitor/devices.json"
 )
+DAEMON_CONFIG_FILE = os.environ.get(
+    "DAEMON_CONFIG_FILE", "/etc/rpi-monitor/config.json"
+)
 FIRMWARE_DIR = os.environ.get(
     "FIRMWARE_DIR",
     str(Path(__file__).resolve().parent.parent / "m5stack-firmware"),
@@ -27,6 +30,20 @@ flash_status: dict = {
     "log": [],
 }
 flash_lock = threading.Lock()
+
+
+def load_daemon_config() -> dict:
+    try:
+        with open(DAEMON_CONFIG_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"services": []}
+
+
+def save_daemon_config(config: dict) -> None:
+    os.makedirs(os.path.dirname(DAEMON_CONFIG_FILE), exist_ok=True)
+    with open(DAEMON_CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=2)
 
 
 def load_devices() -> list:
@@ -179,6 +196,37 @@ def api_rename_device(mac: str):
             break
     save_devices(devices)
     return jsonify({"status": "ok"})
+
+
+@app.route("/settings")
+def settings_page():
+    """Settings page - daemon configuration."""
+    config = load_daemon_config()
+    return render_template("settings.html", config=config)
+
+
+@app.route("/api/config", methods=["GET"])
+def api_get_config():
+    """API: Get daemon configuration."""
+    return jsonify(load_daemon_config())
+
+
+@app.route("/api/config", methods=["POST"])
+def api_set_config():
+    """API: Update daemon configuration."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "JSON body required"}), 400
+
+    config = load_daemon_config()
+    if "ble_name" in data:
+        name = data["ble_name"].strip()
+        if name:
+            config["ble_name"] = name
+        else:
+            config.pop("ble_name", None)
+    save_daemon_config(config)
+    return jsonify({"status": "ok", "restart_required": True})
 
 
 @app.route("/api/serial-ports", methods=["GET"])
