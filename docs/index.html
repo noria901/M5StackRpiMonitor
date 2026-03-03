@@ -44,7 +44,6 @@
     }
     #status-text { color: var(--muted); font-size: 0.85rem; }
     #connect-btn {
-      margin-left: auto;
       padding: 0.5rem 1.25rem;
       background: var(--accent);
       color: #000;
@@ -111,6 +110,97 @@
       color: var(--border);
       font-size: 0.9rem;
     }
+
+    /* Services & Power */
+    .svc-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .svc-row:last-child { border-bottom: none; }
+    .svc-name { font-size: 0.9rem; }
+    .svc-badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .svc-badge.active { background: var(--green); color: #000; }
+    .svc-badge.inactive { background: var(--red); color: #fff; }
+    .svc-toggle {
+      background: var(--border);
+      color: var(--text);
+      border: none;
+      border-radius: 4px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      margin-left: 0.5rem;
+      transition: opacity .15s;
+    }
+    .svc-toggle:hover { opacity: 0.8; }
+    .svc-toggle:disabled { opacity: 0.3; cursor: not-allowed; }
+    .svc-empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
+
+    .power-btn {
+      width: 100%;
+      padding: 0.6rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, border-color .15s;
+      margin-bottom: 0.5rem;
+    }
+    .power-btn:last-child { margin-bottom: 0; }
+    .power-btn:hover { opacity: 0.85; }
+    .power-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .power-btn.reboot {
+      background: transparent;
+      color: var(--yellow);
+      border-color: var(--yellow);
+    }
+    .power-btn.shutdown {
+      background: transparent;
+      color: var(--red);
+      border-color: var(--red);
+    }
+    .power-confirm {
+      display: none;
+      text-align: center;
+      padding: 0.5rem 0;
+    }
+    .power-confirm p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    .power-confirm-btns {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .power-confirm-btns button {
+      padding: 0.4rem 1rem;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-cancel { background: var(--border); color: var(--text); }
+    .btn-exec-reboot { background: var(--yellow); color: #000; }
+    .btn-exec-shutdown { background: var(--red); color: #fff; }
+    #power-status {
+      font-size: 0.8rem;
+      text-align: center;
+      margin-top: 0.5rem;
+      min-height: 1.2em;
+    }
+
     footer {
       margin-top: 2rem;
       text-align: center;
@@ -125,7 +215,8 @@
 <header>
   <div id="status-dot"></div>
   <span id="status-text">未接続</span>
-  <button id="connect-btn">Connect</button>
+  <span id="last-update" style="color:var(--muted);font-size:0.75rem;margin-left:auto;">最終更新: --:--:--</span>
+  <button id="connect-btn" style="margin-left:0.75rem;">Connect</button>
 </header>
 <h1 style="color:var(--accent);font-size:1rem;margin-bottom:1.25rem;">📡 RPi Monitor <span style="color:var(--muted);font-weight:400;">– Web BLE Dashboard</span></h1>
 
@@ -236,6 +327,31 @@
       <span class="metric-value" id="sys-kernel">--</span>
     </div>
   </div>
+
+  <!-- Services -->
+  <div class="card" id="card-services">
+    <div class="card-title">Services</div>
+    <div id="svc-list">
+      <div class="svc-empty">接続後に表示されます</div>
+    </div>
+  </div>
+
+  <!-- Power -->
+  <div class="card" id="card-power">
+    <div class="card-title">Power</div>
+    <div id="power-buttons">
+      <button class="power-btn reboot" id="btn-reboot" disabled>Reboot</button>
+      <button class="power-btn shutdown" id="btn-shutdown" disabled>Shutdown</button>
+    </div>
+    <div class="power-confirm" id="power-confirm">
+      <p id="power-confirm-text"></p>
+      <div class="power-confirm-btns">
+        <button class="btn-cancel" id="btn-power-cancel">キャンセル</button>
+        <button id="btn-power-exec"></button>
+      </div>
+    </div>
+    <div id="power-status"></div>
+  </div>
 </div>
 
 <footer style="margin-top:2rem;">
@@ -252,10 +368,14 @@ const CHAR_MEMORY   = '12345678-1234-5678-1234-56789abcdef2';
 const CHAR_STORAGE  = '12345678-1234-5678-1234-56789abcdef3';
 const CHAR_NETWORK  = '12345678-1234-5678-1234-56789abcdef4';
 const CHAR_SYSTEM   = '12345678-1234-5678-1234-56789abcdef5';
+const CHAR_SERVICES = '12345678-1234-5678-1234-56789abcdef7';
+const CHAR_SYSCTL   = '12345678-1234-5678-1234-56789abcdef8';
 
 // ---- State ----------------------------------------------------------------
 let device = null;
 let server = null;
+let servicesChar = null;
+let sysCtrlChar  = null;
 
 // ---- DOM refs -------------------------------------------------------------
 const dot    = document.getElementById('status-dot');
@@ -267,6 +387,27 @@ if (!navigator.bluetooth) {
   document.getElementById('no-ble').style.display = 'block';
   document.getElementById('dashboard').style.display = 'none';
   btn.disabled = true;
+}
+
+// ---- DOM refs (extra) -----------------------------------------------------
+const lastUpdateEl = document.getElementById('last-update');
+
+let lastRpiTime = '';
+
+function updateTimestamp(rpiTime) {
+  if (rpiTime !== undefined && rpiTime !== '') {
+    lastRpiTime = rpiTime;
+  }
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  const local = hh + ':' + mm + ':' + ss;
+  if (lastRpiTime) {
+    lastUpdateEl.textContent = '最終更新: ' + local + ' (RPi: ' + lastRpiTime + ')';
+  } else {
+    lastUpdateEl.textContent = '最終更新: ' + local;
+  }
 }
 
 // ---- Helpers --------------------------------------------------------------
@@ -315,6 +456,7 @@ function onCpu(event) {
   document.getElementById('cpu-temp').textContent  = d.temp.toFixed(1) + ' °C';
   document.getElementById('cpu-freq').textContent  = d.freq + ' MHz';
   setBar('bar-cpu', d.usage);
+  updateTimestamp();
 }
 
 function onMemory(event) {
@@ -331,6 +473,7 @@ function onMemory(event) {
       ? fmtBytes(d.swap_used) + ' / ' + fmtBytes(d.swap_total) + ' (' + swapPct + ')'
       : 'なし';
   setBar('bar-ram', parseFloat(pct));
+  updateTimestamp();
 }
 
 function onStorage(event) {
@@ -341,6 +484,7 @@ function onStorage(event) {
     fmtBytes(d.used) + ' / ' + fmtBytes(d.total);
   document.getElementById('storage-free').textContent   = fmtBytes(d.free);
   setBar('bar-storage', parseFloat(pct));
+  updateTimestamp();
 }
 
 function onNetwork(event) {
@@ -352,6 +496,7 @@ function onNetwork(event) {
     ? '有効 (' + (d.hotspot_ssid || '--') + ')'
     : '無効';
   document.getElementById('net-mac').textContent     = d.mac || '--';
+  updateTimestamp();
 }
 
 function onSystem(event) {
@@ -360,7 +505,128 @@ function onSystem(event) {
   document.getElementById('sys-uptime').textContent   = fmtUptime(d.uptime);
   document.getElementById('sys-os').textContent       = d.os || '--';
   document.getElementById('sys-kernel').textContent   = d.kernel || '--';
+  updateTimestamp(d.time || '');
 }
+
+// ---- Services handler -----------------------------------------------------
+function onServices(event) {
+  const list = decode(event.target.value);
+  const container = document.getElementById('svc-list');
+  if (!Array.isArray(list) || list.length === 0) {
+    container.innerHTML = '<div class="svc-empty">設定されたサービスがありません</div>';
+    return;
+  }
+  container.innerHTML = list.map(svc => {
+    const active = svc.active;
+    const badge = active
+      ? '<span class="svc-badge active">active</span>'
+      : '<span class="svc-badge inactive">inactive</span>';
+    const action = active ? 'stop' : 'start';
+    const label = active ? 'Stop' : 'Start';
+    return `<div class="svc-row">
+      <span class="svc-name">${escapeHtml(svc.name)}</span>
+      <div>${badge}<button class="svc-toggle" data-svc="${escapeHtml(svc.name)}" data-action="${action}">${label}</button></div>
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('.svc-toggle').forEach(btn => {
+    btn.addEventListener('click', onServiceToggle);
+  });
+  updateTimestamp();
+}
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+async function onServiceToggle(e) {
+  const btn = e.currentTarget;
+  const svcName = btn.dataset.svc;
+  const action = btn.dataset.action;
+  if (!servicesChar) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const cmd = JSON.stringify({ action, service: svcName });
+    await servicesChar.writeValue(new TextEncoder().encode(cmd));
+    // Re-read updated state after short delay
+    await new Promise(r => setTimeout(r, 500));
+    const value = await servicesChar.readValue();
+    onServices({ target: { value } });
+  } catch (err) {
+    console.error('Service control error:', err);
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.disabled = false; btn.textContent = action === 'start' ? 'Start' : 'Stop'; }, 2000);
+  }
+}
+
+// ---- Power handler --------------------------------------------------------
+let pendingPowerAction = '';
+
+function setupPower() {
+  const btnReboot   = document.getElementById('btn-reboot');
+  const btnShutdown = document.getElementById('btn-shutdown');
+  const confirmDiv  = document.getElementById('power-confirm');
+  const confirmText = document.getElementById('power-confirm-text');
+  const btnCancel   = document.getElementById('btn-power-cancel');
+  const btnExec     = document.getElementById('btn-power-exec');
+  const statusEl    = document.getElementById('power-status');
+  const buttonsDiv  = document.getElementById('power-buttons');
+
+  btnReboot.addEventListener('click', () => {
+    pendingPowerAction = 'reboot';
+    confirmText.textContent = '本当に再起動しますか？';
+    btnExec.textContent = 'Reboot';
+    btnExec.className = 'btn-exec-reboot';
+    buttonsDiv.style.display = 'none';
+    confirmDiv.style.display = 'block';
+    statusEl.textContent = '';
+  });
+
+  btnShutdown.addEventListener('click', () => {
+    pendingPowerAction = 'shutdown';
+    confirmText.textContent = '本当にシャットダウンしますか？';
+    btnExec.textContent = 'Shutdown';
+    btnExec.className = 'btn-exec-shutdown';
+    buttonsDiv.style.display = 'none';
+    confirmDiv.style.display = 'block';
+    statusEl.textContent = '';
+  });
+
+  btnCancel.addEventListener('click', () => {
+    pendingPowerAction = '';
+    confirmDiv.style.display = 'none';
+    buttonsDiv.style.display = 'block';
+  });
+
+  btnExec.addEventListener('click', async () => {
+    if (!sysCtrlChar || !pendingPowerAction) return;
+    btnExec.disabled = true;
+    btnCancel.disabled = true;
+    statusEl.textContent = '送信中...';
+    statusEl.style.color = 'var(--muted)';
+    try {
+      const cmd = JSON.stringify({ action: pendingPowerAction });
+      await sysCtrlChar.writeValue(new TextEncoder().encode(cmd));
+      statusEl.textContent = pendingPowerAction === 'reboot'
+        ? '再起動コマンドを送信しました'
+        : 'シャットダウンコマンドを送信しました';
+      statusEl.style.color = 'var(--green)';
+    } catch (err) {
+      statusEl.textContent = 'エラー: ' + err.message;
+      statusEl.style.color = 'var(--red)';
+    }
+    pendingPowerAction = '';
+    confirmDiv.style.display = 'none';
+    buttonsDiv.style.display = 'block';
+    btnExec.disabled = false;
+    btnCancel.disabled = false;
+  });
+}
+
+setupPower();
 
 // ---- Subscribe helper -----------------------------------------------------
 async function subscribe(service, uuid, handler) {
@@ -395,6 +661,16 @@ async function connect() {
     await subscribe(service, CHAR_NETWORK, onNetwork);
     await subscribe(service, CHAR_SYSTEM,  onSystem);
 
+    // Services (read-only subscribe; store ref for write)
+    servicesChar = await service.getCharacteristic(CHAR_SERVICES);
+    const svcValue = await servicesChar.readValue();
+    onServices({ target: { value: svcValue } });
+
+    // System Control (write-only; store ref)
+    sysCtrlChar = await service.getCharacteristic(CHAR_SYSCTL);
+    document.getElementById('btn-reboot').disabled = false;
+    document.getElementById('btn-shutdown').disabled = false;
+
     setStatus('connected', device.name + ' に接続中');
     btn.textContent = 'Disconnect';
     btn.disabled = false;
@@ -405,6 +681,8 @@ async function connect() {
     btn.disabled = false;
     device = null;
     server = null;
+    servicesChar = null;
+    sysCtrlChar = null;
   }
 }
 
@@ -418,8 +696,21 @@ function onDisconnected() {
   setStatus('error', '切断されました');
   btn.textContent = 'Connect';
   btn.disabled = false;
+  lastUpdateEl.textContent = '最終更新: --:--:--';
+  lastRpiTime = '';
   device = null;
   server = null;
+  servicesChar = null;
+  sysCtrlChar = null;
+  // Reset Services card
+  document.getElementById('svc-list').innerHTML =
+    '<div class="svc-empty">接続後に表示されます</div>';
+  // Reset Power card
+  document.getElementById('btn-reboot').disabled = true;
+  document.getElementById('btn-shutdown').disabled = true;
+  document.getElementById('power-confirm').style.display = 'none';
+  document.getElementById('power-buttons').style.display = 'block';
+  document.getElementById('power-status').textContent = '';
 }
 
 btn.addEventListener('click', () => {

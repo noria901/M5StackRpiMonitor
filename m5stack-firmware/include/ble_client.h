@@ -48,6 +48,13 @@ struct SystemInfo {
     unsigned long uptime = 0;
     String os = "";
     String kernel = "";
+    String time = "";
+    String platform = "";
+};
+
+struct ServiceInfo {
+    String name = "";
+    bool active = false;
 };
 
 class BLEMonitorClient {
@@ -64,6 +71,11 @@ public:
 
     bool readAll();
     bool sendRegistration(const String& deviceName);
+    bool sendServiceControl(const String& serviceName, const String& action);
+    bool sendPowerCommand(const String& action);
+
+    int getServiceCount();
+    ServiceInfo getServiceInfo(int index);
 
     CpuInfo getCpuInfo();
     MemoryInfo getMemoryInfo();
@@ -72,6 +84,7 @@ public:
     SystemInfo getSystemInfo();
 
     String getServerName();
+    unsigned long getLastDataMillis();
     int getFoundDeviceCount();
     String getFoundDeviceName(int index);
     BLEAdvertisedDevice* getFoundDevice(int index);
@@ -87,10 +100,12 @@ private:
     StorageInfo storageInfo;
     NetworkInfo networkInfo;
     SystemInfo systemInfo;
+    std::vector<ServiceInfo> services;
 
     String serverName = "";
     std::vector<BLEAdvertisedDevice> foundDevices;
     unsigned long scanStartTime = 0;
+    unsigned long lastDataMillis = 0;
     Preferences prefs;
 
     bool readCharacteristic(const char* uuid, String& result);
@@ -99,4 +114,6 @@ private:
     void parseStorageInfo(const String& json);
     void parseNetworkInfo(const String& json);
     void parseSystemInfo(const String& json);
+    void parseServicesInfo(const String& json);
+    bool writeCharacteristic(const char* uuid, const String& data);
 };

@@ -82,6 +82,8 @@ void UI::nextScreen() {
     currentScreen = (Screen)next;
     needsFullRedraw = true;
     regConfirmMode = false;
+    svcConfirmMode = false;
+    pwrConfirmMode = false;
 }
 
 void UI::prevScreen() {
@@ -89,9 +91,77 @@ void UI::prevScreen() {
     currentScreen = (Screen)prev;
     needsFullRedraw = true;
     regConfirmMode = false;
+    svcConfirmMode = false;
+    pwrConfirmMode = false;
+}
+
+void UI::servicesBtnA() {
+    if (svcConfirmMode) {
+        svcConfirmMode = false;
+    } else if (svcSelectedIndex > 0) {
+        svcSelectedIndex--;
+    }
+    needsFullRedraw = true;
+}
+
+void UI::servicesBtnC(int serviceCount) {
+    if (!svcConfirmMode && svcSelectedIndex < serviceCount - 1) {
+        svcSelectedIndex++;
+    }
+    needsFullRedraw = true;
+}
+
+void UI::powerBtnA() {
+    if (pwrConfirmMode) {
+        pwrConfirmMode = false;
+    } else if (pwrSelectedIndex > 0) {
+        pwrSelectedIndex--;
+    }
+    needsFullRedraw = true;
+}
+
+void UI::powerBtnC() {
+    if (!pwrConfirmMode && pwrSelectedIndex < 1) {
+        pwrSelectedIndex++;
+    }
+    needsFullRedraw = true;
 }
 
 void UI::buttonAction(BLEMonitorClient& ble) {
+    if (currentScreen == Screen::SERVICES) {
+        if (!ble.isConnected()) return;
+        int count = ble.getServiceCount();
+        if (count == 0) return;
+        if (svcConfirmMode) {
+            // 実行: active なら stop、inactive なら start
+            auto svc = ble.getServiceInfo(svcSelectedIndex);
+            String action = svc.active ? "stop" : "start";
+            ble.sendServiceControl(svc.name, action);
+            // 状態更新のため少し待ってから再読み込み
+            delay(500);
+            ble.readAll();
+            svcConfirmMode = false;
+            needsFullRedraw = true;
+        } else {
+            svcConfirmMode = true;
+            needsFullRedraw = true;
+        }
+        return;
+    }
+    if (currentScreen == Screen::POWER_MENU) {
+        if (!ble.isConnected()) return;
+        if (pwrConfirmMode) {
+            // 実行: reboot or shutdown
+            String action = (pwrSelectedIndex == 0) ? "reboot" : "shutdown";
+            ble.sendPowerCommand(action);
+            pwrConfirmMode = false;
+            needsFullRedraw = true;
+        } else {
+            pwrConfirmMode = true;
+            needsFullRedraw = true;
+        }
+        return;
+    }
     if (currentScreen == Screen::SETTINGS) {
         // Settings画面ではトグル操作
         soundEnabled = !soundEnabled;
@@ -182,6 +252,8 @@ void UI::update(BLEMonitorClient& ble) {
             case Screen::STORAGE_DETAIL:drawStorageDetail(ble); break;
             case Screen::NETWORK:       drawNetwork(ble); break;
             case Screen::SYSTEM_INFO:   drawSystemInfo(ble); break;
+            case Screen::SERVICES:      drawServices(ble); break;
+            case Screen::POWER_MENU:    drawPowerMenu(ble); break;
             case Screen::QR_CODE:       drawQrCodeScreen(ble); break;
             case Screen::SETTINGS:      drawSettings(); break;
             case Screen::REGISTRATION:  drawRegistration(ble); break;
@@ -197,17 +269,39 @@ void UI::drawHeader(BLEMonitorClient& ble) {
     M5.Lcd.fillRect(0, 0, SCREEN_WIDTH, HEADER_HEIGHT, COLOR_HEADER_BG);
     M5.Lcd.setTextColor(COLOR_ACCENT);
     M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(4, 6);
-    M5.Lcd.print("RPi Monitor");
+    M5.Lcd.setCursor(4, 2);
+    auto sys = ble.getSystemInfo();
+    if (sys.platform == "jetson") {
+        M5.Lcd.print("Jetson Monitor");
+    } else {
+        M5.Lcd.print("RPi Monitor");
+    }
 
-    // 接続状態
-    M5.Lcd.setCursor(200, 6);
+    // 接続状態 (1行目右側)
     if (ble.isConnected()) {
         M5.Lcd.setTextColor(COLOR_GOOD);
+        M5.Lcd.setCursor(200, 2);
         M5.Lcd.printf("BLE: %s", ble.getServerName().c_str());
     } else {
         M5.Lcd.setTextColor(COLOR_BAD);
+        M5.Lcd.setCursor(200, 2);
         M5.Lcd.print("BLE: Disconnected");
+    }
+
+    // 最終更新時刻 (2行目)
+    if (ble.isConnected() && ble.getLastDataMillis() > 0) {
+        M5.Lcd.setCursor(4, 14);
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+
+        unsigned long elapsed = (millis() - ble.getLastDataMillis()) / 1000;
+
+        if (sys.time.length() > 0) {
+            // RPi時刻あり: "Updated: 14:32:05 (3s ago)"
+            M5.Lcd.printf("Updated: %s (%lus ago)", sys.time.c_str(), elapsed);
+        } else {
+            // RPi時刻なし: フォールバック相対表示
+            M5.Lcd.printf("Updated: %lus ago", elapsed);
+        }
     }
 }
 
@@ -218,7 +312,7 @@ void UI::drawFooter() {
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
 
     const char* screenNames[] = {
-        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "QR", "Settings", "Register"
+        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "Services", "Power", "QR", "Settings", "Register"
     };
     int idx = (int)currentScreen;
 
@@ -588,6 +682,117 @@ void UI::drawSettings() {
     y += 16;
     snprintf(buf, sizeof(buf), ">= %.0f%%", ALERT_STORAGE_USAGE);
     drawKeyValue(10, y, "Storage:", buf, COLOR_WARN);
+}
+
+// === Services Screen ===
+void UI::drawServices(BLEMonitorClient& ble) {
+    drawScreenTitle("Services");
+    int y = HEADER_HEIGHT + 36;
+
+    int count = ble.getServiceCount();
+    if (count == 0) {
+        M5.Lcd.setTextSize(1);
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("No services configured.");
+        y += 16;
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("Edit /etc/rpi-monitor/config.json");
+        return;
+    }
+
+    // サービスリスト
+    M5.Lcd.setTextSize(1);
+    int maxVisible = 7;  // 画面に収まる最大数
+    for (int i = 0; i < count && i < maxVisible; i++) {
+        auto svc = ble.getServiceInfo(i);
+
+        if (i == svcSelectedIndex) {
+            M5.Lcd.setTextColor(COLOR_BG);
+            M5.Lcd.fillRect(8, y - 2, 304, 16, COLOR_ACCENT);
+        } else {
+            M5.Lcd.setTextColor(COLOR_TEXT);
+        }
+        M5.Lcd.setCursor(12, y);
+
+        // ステータスアイコン + 名前
+        const char* icon = svc.active ? "[*]" : "[ ]";
+        uint16_t statusColor = svc.active ? COLOR_GOOD : COLOR_BAD;
+
+        if (i != svcSelectedIndex) {
+            M5.Lcd.setTextColor(statusColor);
+        }
+        M5.Lcd.print(icon);
+        M5.Lcd.print(" ");
+        if (i != svcSelectedIndex) {
+            M5.Lcd.setTextColor(COLOR_TEXT);
+        }
+        M5.Lcd.print(svc.name.c_str());
+
+        // 右端にステータス文字
+        int statusX = 260;
+        M5.Lcd.setCursor(statusX, y);
+        if (i != svcSelectedIndex) {
+            M5.Lcd.setTextColor(statusColor);
+        }
+        M5.Lcd.print(svc.active ? "active" : "inactive");
+
+        y += 18;
+    }
+
+    y += 8;
+    if (svcConfirmMode) {
+        auto svc = ble.getServiceInfo(svcSelectedIndex);
+        const char* action = svc.active ? "Stop" : "Start";
+        M5.Lcd.setTextColor(COLOR_WARN);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.printf("%s %s?", action, svc.name.c_str());
+        y += 16;
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("[<Prev] Cancel  [Select] OK");
+    } else {
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("[<Prev] Up  [Select] Toggle  [Next>] Down");
+    }
+}
+
+// === Power Menu Screen ===
+void UI::drawPowerMenu(BLEMonitorClient& ble) {
+    drawScreenTitle("Power");
+    int y = HEADER_HEIGHT + 50;
+
+    const char* items[] = {"Reboot", "Shutdown"};
+    const uint16_t icons[] = {COLOR_WARN, COLOR_BAD};
+
+    M5.Lcd.setTextSize(2);
+    for (int i = 0; i < 2; i++) {
+        if (i == pwrSelectedIndex) {
+            M5.Lcd.fillRect(8, y - 4, 304, 28, COLOR_ACCENT);
+            M5.Lcd.setTextColor(COLOR_BG);
+        } else {
+            M5.Lcd.setTextColor(icons[i]);
+        }
+        M5.Lcd.setCursor(20, y);
+        M5.Lcd.print(items[i]);
+        y += 40;
+    }
+
+    y += 10;
+    M5.Lcd.setTextSize(1);
+    if (pwrConfirmMode) {
+        M5.Lcd.setTextColor(COLOR_BAD);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.printf("%s RPi?", items[pwrSelectedIndex]);
+        y += 16;
+        M5.Lcd.setTextColor(COLOR_WARN);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("[<Prev] Cancel  [Select] Execute");
+    } else {
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("[<Prev] Up  [Select] Execute  [Next>] Down");
+    }
 }
 
 // === Registration Screen ===

@@ -12,11 +12,16 @@ from dbus_next import Variant, BusType
 from dbus_next.constants import PropertyAccess
 
 from system_info import (
+    control_service,
+    detect_platform,
     get_cpu_info,
     get_memory_info,
+    get_services_info,
     get_storage_info,
     get_network_info,
     get_system_info,
+    load_config,
+    system_control,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +34,8 @@ CHAR_STORAGE_UUID = "12345678-1234-5678-1234-56789abcdef3"
 CHAR_NETWORK_UUID = "12345678-1234-5678-1234-56789abcdef4"
 CHAR_SYSTEM_UUID = "12345678-1234-5678-1234-56789abcdef5"
 CHAR_REGISTRATION_UUID = "12345678-1234-5678-1234-56789abcdef6"
+CHAR_SERVICES_UUID = "12345678-1234-5678-1234-56789abcdef7"
+CHAR_SYSTEM_CTRL_UUID = "12345678-1234-5678-1234-56789abcdef8"
 
 BLUEZ_SERVICE = "org.bluez"
 LE_ADVERTISING_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
@@ -56,8 +63,14 @@ def save_registered_devices(devices: list) -> None:
         json.dump(devices, f, indent=2)
 
 
+def _ble_local_name() -> str:
+    """Return BLE local name based on detected platform."""
+    platform = detect_platform()
+    return "Jetson-Monitor" if platform == "jetson" else "RPi-Monitor"
+
+
 class Advertisement(ServiceInterface):
-    """BLE advertisement for the RPi Monitor service."""
+    """BLE advertisement for the monitor service."""
 
     def __init__(self, index: int):
         self._path = f"/org/bluez/rpimonitor/advertisement{index}"
@@ -73,7 +86,7 @@ class Advertisement(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def LocalName(self) -> "s":
-        return "RPi-Monitor"
+        return _ble_local_name()
 
     @dbus_property(access=PropertyAccess.READ)
     def Includes(self) -> "as":
@@ -199,6 +212,54 @@ class RegistrationCharacteristic(Characteristic):
             self.set_value(json.dumps({"status": "error", "message": str(e)}))
 
 
+class ServicesCharacteristic(Characteristic):
+    """BLE characteristic for systemd service monitoring and control."""
+
+    def __init__(self, path: str, config: dict):
+        super().__init__(CHAR_SERVICES_UUID, ["read", "write"], path)
+        self._config = config
+        self._service_names: list[str] = config.get("services", [])
+
+    def update(self):
+        self.set_value(json.dumps(get_services_info(self._service_names)))
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        data = bytes(value).decode("utf-8")
+        logger.info(f"Service control request: {data}")
+        try:
+            req = json.loads(data)
+            action = req.get("action", "")
+            service = req.get("service", "")
+            result = control_service(service, action, self._service_names)
+            self.set_value(json.dumps(result))
+            # 制御後にステータスを再取得
+            self.update()
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Service control error: {e}")
+            self.set_value(json.dumps({"status": "error", "message": str(e)}))
+
+
+class SystemControlCharacteristic(Characteristic):
+    """BLE characteristic for system power control (reboot/shutdown)."""
+
+    def __init__(self, path: str):
+        super().__init__(CHAR_SYSTEM_CTRL_UUID, ["read", "write"], path)
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        data = bytes(value).decode("utf-8")
+        logger.info(f"System control request: {data}")
+        try:
+            req = json.loads(data)
+            action = req.get("action", "")
+            result = system_control(action)
+            self.set_value(json.dumps(result))
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"System control error: {e}")
+            self.set_value(json.dumps({"status": "error", "message": str(e)}))
+
+
 class GattService(ServiceInterface):
     """GATT Service definition."""
 
@@ -240,6 +301,10 @@ class BLEServer:
         # Create service
         self.service = GattService(service_path)
 
+        # Load config
+        config = load_config()
+        logger.info(f"Config loaded: services={config.get('services', [])}")
+
         # Create characteristics
         cpu_char = CpuCharacteristic(f"{service_path}/char0")
         mem_char = MemoryCharacteristic(f"{service_path}/char1")
@@ -247,6 +312,8 @@ class BLEServer:
         net_char = NetworkCharacteristic(f"{service_path}/char3")
         sys_char = SystemCharacteristic(f"{service_path}/char4")
         reg_char = RegistrationCharacteristic(f"{service_path}/char5")
+        svc_char = ServicesCharacteristic(f"{service_path}/char6", config)
+        sysctrl_char = SystemControlCharacteristic(f"{service_path}/char7")
 
         self.characteristics = [
             cpu_char,
@@ -255,6 +322,8 @@ class BLEServer:
             net_char,
             sys_char,
             reg_char,
+            svc_char,
+            sysctrl_char,
         ]
 
         # Export objects on D-Bus
@@ -286,7 +355,7 @@ class BLEServer:
         adapter = proxy.get_interface(ADAPTER_IFACE)
         await adapter.set_powered(True)  # type: ignore
         await adapter.set_discoverable(True)  # type: ignore
-        await adapter.set_alias("RPi-Monitor")  # type: ignore
+        await adapter.set_alias(_ble_local_name())  # type: ignore
 
         # Register GATT manager
         gatt_manager = proxy.get_interface(GATT_MANAGER_IFACE)
