@@ -1,4 +1,4 @@
-"""Tests for system_info module."""
+"""Tests for system_info and ble_server modules."""
 
 import json
 from unittest.mock import patch, mock_open, MagicMock
@@ -7,6 +7,7 @@ import pytest
 
 # Reset lru_cache between tests
 import system_info
+import ble_server
 
 
 @pytest.fixture(autouse=True)
@@ -231,3 +232,35 @@ class TestControlService:
             )
 
         assert result == {"status": "ok"}
+
+
+class TestBLELocalName:
+    """Tests for BLE advertising name logic."""
+
+    def setup_method(self):
+        ble_server._ble_name_override = None
+
+    def teardown_method(self):
+        ble_server._ble_name_override = None
+
+    def test_default_rpi(self):
+        with patch("ble_server.detect_platform", return_value="rpi"):
+            assert ble_server._ble_local_name() == "RPi-Monitor"
+
+    def test_default_jetson(self):
+        with patch("ble_server.detect_platform", return_value="jetson"):
+            assert ble_server._ble_local_name() == "Jetson-Monitor"
+
+    def test_override(self):
+        ble_server._ble_name_override = "MyCustomName"
+        assert ble_server._ble_local_name() == "MyCustomName"
+
+    def test_override_takes_precedence(self):
+        ble_server._ble_name_override = "Custom"
+        with patch("ble_server.detect_platform", return_value="rpi"):
+            assert ble_server._ble_local_name() == "Custom"
+
+    def test_empty_override_falls_back(self):
+        ble_server._ble_name_override = ""
+        with patch("ble_server.detect_platform", return_value="rpi"):
+            assert ble_server._ble_local_name() == "RPi-Monitor"

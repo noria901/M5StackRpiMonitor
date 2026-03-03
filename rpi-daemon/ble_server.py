@@ -63,8 +63,17 @@ def save_registered_devices(devices: list) -> None:
         json.dump(devices, f, indent=2)
 
 
+_ble_name_override: Optional[str] = None
+
+
 def _ble_local_name() -> str:
-    """Return BLE local name based on detected platform."""
+    """Return BLE local name.
+
+    If a custom name was set via config (``ble_name``), that value is used.
+    Otherwise the name is derived from the detected platform.
+    """
+    if _ble_name_override:
+        return _ble_name_override
     platform = detect_platform()
     return "Jetson-Monitor" if platform == "jetson" else "RPi-Monitor"
 
@@ -304,6 +313,15 @@ class BLEServer:
         # Load config
         config = load_config()
         logger.info(f"Config loaded: services={config.get('services', [])}")
+
+        # Apply custom BLE name from config
+        global _ble_name_override
+        custom_name = config.get("ble_name", "").strip()
+        if custom_name:
+            _ble_name_override = custom_name
+            logger.info(f"BLE name override: {custom_name}")
+        else:
+            _ble_name_override = None
 
         # Create characteristics
         cpu_char = CpuCharacteristic(f"{service_path}/char0")
