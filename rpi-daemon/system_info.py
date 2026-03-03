@@ -305,7 +305,9 @@ def system_control(action: str) -> dict:
     if action not in ("reboot", "shutdown"):
         return {"status": "error", "message": f"invalid action '{action}'"}
     try:
-        cmd = ["systemctl", action]
+        # "shutdown" maps to "systemctl poweroff"
+        systemctl_action = "poweroff" if action == "shutdown" else action
+        cmd = ["systemctl", systemctl_action]
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=15
         )
