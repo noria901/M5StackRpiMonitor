@@ -12,6 +12,7 @@ from dbus_next import Variant, BusType
 from dbus_next.constants import PropertyAccess
 
 from system_info import (
+    CommandRunner,
     control_service,
     detect_platform,
     get_cpu_info,
@@ -36,6 +37,7 @@ CHAR_SYSTEM_UUID = "12345678-1234-5678-1234-56789abcdef5"
 CHAR_REGISTRATION_UUID = "12345678-1234-5678-1234-56789abcdef6"
 CHAR_SERVICES_UUID = "12345678-1234-5678-1234-56789abcdef7"
 CHAR_SYSTEM_CTRL_UUID = "12345678-1234-5678-1234-56789abcdef8"
+CHAR_COMMANDS_UUID = "12345678-1234-5678-1234-56789abcdef9"
 
 BLUEZ_SERVICE = "org.bluez"
 LE_ADVERTISING_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
@@ -269,6 +271,36 @@ class SystemControlCharacteristic(Characteristic):
             self.set_value(json.dumps({"status": "error", "message": str(e)}))
 
 
+class CommandsCharacteristic(Characteristic):
+    """BLE characteristic for custom command execution."""
+
+    def __init__(self, path: str, runner: CommandRunner):
+        super().__init__(CHAR_COMMANDS_UUID, ["read", "write"], path)
+        self._runner = runner
+
+    def update(self):
+        self.set_value(json.dumps(self._runner.get_status()))
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        data = bytes(value).decode("utf-8")
+        logger.info(f"Command request: {data}")
+        try:
+            req = json.loads(data)
+            action = req.get("action", "")
+            name = req.get("name", "")
+            if action == "run":
+                result = self._runner.run(name)
+            elif action == "stop":
+                result = self._runner.stop(name)
+            else:
+                result = {"status": "error", "message": f"invalid action '{action}'"}
+            self.set_value(json.dumps(result))
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Command error: {e}")
+            self.set_value(json.dumps({"status": "error", "message": str(e)}))
+
+
 class GattService(ServiceInterface):
     """GATT Service definition."""
 
@@ -323,6 +355,10 @@ class BLEServer:
         else:
             _ble_name_override = None
 
+        # Create command runner
+        cmd_runner = CommandRunner(config.get("commands", []))
+        logger.info(f"Commands configured: {list(cmd_runner._allowed.keys())}")
+
         # Create characteristics
         cpu_char = CpuCharacteristic(f"{service_path}/char0")
         mem_char = MemoryCharacteristic(f"{service_path}/char1")
@@ -332,6 +368,7 @@ class BLEServer:
         reg_char = RegistrationCharacteristic(f"{service_path}/char5")
         svc_char = ServicesCharacteristic(f"{service_path}/char6", config)
         sysctrl_char = SystemControlCharacteristic(f"{service_path}/char7")
+        cmd_char = CommandsCharacteristic(f"{service_path}/char8", cmd_runner)
 
         self.characteristics = [
             cpu_char,
@@ -342,6 +379,7 @@ class BLEServer:
             reg_char,
             svc_char,
             sysctrl_char,
+            cmd_char,
         ]
 
         # Export objects on D-Bus

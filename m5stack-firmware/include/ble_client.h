@@ -57,6 +57,12 @@ struct ServiceInfo {
     bool active = false;
 };
 
+struct CommandInfo {
+    String name = "";
+    String state = "idle";  // idle, running, done, error
+    int exitCode = -1;
+};
+
 class BLEMonitorClient {
 public:
     void init();
@@ -73,9 +79,13 @@ public:
     bool sendRegistration(const String& deviceName);
     bool sendServiceControl(const String& serviceName, const String& action);
     bool sendPowerCommand(const String& action);
+    bool sendCommand(const String& name, const String& action);
 
     int getServiceCount();
     ServiceInfo getServiceInfo(int index);
+
+    int getCommandCount();
+    CommandInfo getCommandInfo(int index);
 
     CpuInfo getCpuInfo();
     MemoryInfo getMemoryInfo();
@@ -101,6 +111,7 @@ private:
     NetworkInfo networkInfo;
     SystemInfo systemInfo;
     std::vector<ServiceInfo> services;
+    std::vector<CommandInfo> commands;
 
     String serverName = "";
     std::vector<BLEAdvertisedDevice> foundDevices;
@@ -115,5 +126,6 @@ private:
     void parseNetworkInfo(const String& json);
     void parseSystemInfo(const String& json);
     void parseServicesInfo(const String& json);
+    void parseCommandsInfo(const String& json);
     bool writeCharacteristic(const char* uuid, const String& data);
 };

@@ -61,6 +61,9 @@ void loop() {
         } else if (ui.getCurrentScreen() == Screen::POWER_MENU &&
             bleClient.isConnected()) {
             ui.powerBtnA();
+        } else if (ui.getCurrentScreen() == Screen::COMMANDS &&
+            bleClient.isConnected() && bleClient.getCommandCount() > 0) {
+            ui.commandsBtnA();
         } else if (ui.getCurrentScreen() == Screen::REGISTRATION &&
             !bleClient.isConnected() && bleClient.getFoundDeviceCount() > 0) {
             ui.registrationBtnA();
@@ -82,6 +85,9 @@ void loop() {
         } else if (ui.getCurrentScreen() == Screen::POWER_MENU &&
             bleClient.isConnected()) {
             ui.powerBtnC();
+        } else if (ui.getCurrentScreen() == Screen::COMMANDS &&
+            bleClient.isConnected() && bleClient.getCommandCount() > 0) {
+            ui.commandsBtnC(bleClient.getCommandCount());
         } else if (ui.getCurrentScreen() == Screen::REGISTRATION &&
             !bleClient.isConnected() && bleClient.getFoundDeviceCount() > 0) {
             ui.registrationBtnC(bleClient.getFoundDeviceCount());

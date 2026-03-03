@@ -229,6 +229,60 @@ def api_set_config():
     return jsonify({"status": "ok", "restart_required": True})
 
 
+@app.route("/commands")
+def commands_page():
+    """Commands page - run and monitor custom commands."""
+    config = load_daemon_config()
+    commands = config.get("commands", [])
+    return render_template("commands.html", commands=commands)
+
+
+@app.route("/api/commands/run", methods=["POST"])
+def api_commands_run():
+    """API: Run or stop a command."""
+    data = request.get_json()
+    if not data or "name" not in data or "action" not in data:
+        return jsonify({"status": "error", "message": "name and action required"}), 400
+
+    name = data["name"]
+    action = data["action"]
+
+    result = _command_runner_exec(name, action)
+    return jsonify(result)
+
+
+@app.route("/api/commands/status", methods=["GET"])
+def api_commands_status():
+    """API: Get status of all configured commands."""
+    runner = _get_command_runner()
+    return jsonify(runner.get_status())
+
+
+def _get_command_runner():
+    """Lazy-init a shared CommandRunner from daemon config."""
+    if not hasattr(app, "_command_runner"):
+        import importlib
+        sys_path = os.path.join(
+            os.path.dirname(__file__), "..", "rpi-daemon"
+        )
+        import sys
+        if sys_path not in sys.path:
+            sys.path.insert(0, sys_path)
+        from system_info import CommandRunner
+        config = load_daemon_config()
+        app._command_runner = CommandRunner(config.get("commands", []))
+    return app._command_runner
+
+
+def _command_runner_exec(name: str, action: str) -> dict:
+    runner = _get_command_runner()
+    if action == "run":
+        return runner.run(name)
+    elif action == "stop":
+        return runner.stop(name)
+    return {"status": "error", "message": f"invalid action '{action}'"}
+
+
 @app.route("/api/serial-ports", methods=["GET"])
 def api_serial_ports():
     """API: Detect connected serial ports."""

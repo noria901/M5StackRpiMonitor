@@ -14,6 +14,7 @@ enum class Screen {
     SYSTEM_INFO,
     SERVICES,
     POWER_MENU,
+    COMMANDS,
     QR_CODE,
     SETTINGS,
     REGISTRATION,
@@ -33,6 +34,8 @@ public:
     void servicesBtnC(int serviceCount);
     void powerBtnA();
     void powerBtnC();
+    void commandsBtnA();
+    void commandsBtnC(int commandCount);
     void setNeedsRedraw();
     Screen getCurrentScreen();
 
@@ -62,6 +65,10 @@ private:
     int pwrSelectedIndex = 0;  // 0=Reboot, 1=Shutdown
     bool pwrConfirmMode = false;
 
+    // Commands screen state
+    int cmdSelectedIndex = 0;
+    bool cmdConfirmMode = false;
+
     // Settings
     bool soundEnabled = true;
     int settingsSelection = 0;
@@ -87,6 +94,7 @@ private:
     void drawRegistration(BLEMonitorClient& ble);
     void drawServices(BLEMonitorClient& ble);
     void drawPowerMenu(BLEMonitorClient& ble);
+    void drawCommands(BLEMonitorClient& ble);
     void drawQrCodeScreen(BLEMonitorClient& ble);
     void drawSettings();
     void drawDisconnected(BLEMonitorClient& ble);

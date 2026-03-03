@@ -97,6 +97,84 @@ class TestConfigAPI:
         assert resp.status_code == 400
 
 
+class TestCommandsPage:
+    def test_commands_page_renders(self, client):
+        resp = client.get("/commands")
+        assert resp.status_code == 200
+        assert b"Commands" in resp.data
+
+    def test_commands_page_shows_configured_commands(self, client):
+        _write(os.environ["DAEMON_CONFIG_FILE"], json.dumps({
+            "services": [],
+            "commands": [
+                {"name": "hello", "command": "echo hello"},
+                {"name": "sleep-test", "command": "sleep 10"},
+            ]
+        }))
+        resp = client.get("/commands")
+        assert b"hello" in resp.data
+        assert b"sleep-test" in resp.data
+
+    def test_commands_page_empty_state(self, client):
+        resp = client.get("/commands")
+        assert b"No Commands" in resp.data
+
+
+class TestCommandsAPI:
+    def _setup_commands(self):
+        _write(os.environ["DAEMON_CONFIG_FILE"], json.dumps({
+            "services": [],
+            "commands": [
+                {"name": "hello", "command": "echo hello"},
+            ]
+        }))
+        # Reset cached command runner
+        if hasattr(app, "_command_runner"):
+            del app._command_runner
+
+    def test_commands_status_endpoint(self, client):
+        self._setup_commands()
+        resp = client.get("/api/commands/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["name"] == "hello"
+        assert data[0]["state"] == "idle"
+
+    def test_commands_run_missing_params(self, client):
+        resp = client.post("/api/commands/run", json={})
+        assert resp.status_code == 400
+
+    def test_commands_run_missing_action(self, client):
+        resp = client.post("/api/commands/run", json={"name": "hello"})
+        assert resp.status_code == 400
+
+    def test_commands_run_invalid_action(self, client):
+        self._setup_commands()
+        resp = client.post("/api/commands/run",
+                           json={"name": "hello", "action": "delete"})
+        data = resp.get_json()
+        assert data["status"] == "error"
+        assert "invalid action" in data["message"]
+
+    def test_commands_run_unknown_command(self, client):
+        self._setup_commands()
+        resp = client.post("/api/commands/run",
+                           json={"name": "unknown", "action": "run"})
+        data = resp.get_json()
+        assert data["status"] == "error"
+        assert "not in config" in data["message"]
+
+    def test_commands_stop_idle(self, client):
+        self._setup_commands()
+        resp = client.post("/api/commands/run",
+                           json={"name": "hello", "action": "stop"})
+        data = resp.get_json()
+        assert data["status"] == "error"
+        assert "not running" in data["message"]
+
+
 class TestNavLinks:
     def test_index_has_settings_link(self, client):
         resp = client.get("/")
@@ -104,4 +182,12 @@ class TestNavLinks:
 
     def test_flash_has_settings_link(self, client):
         resp = client.get("/flash")
+        assert b'/settings' in resp.data
+
+    def test_index_has_commands_link(self, client):
+        resp = client.get("/")
+        assert b'/commands' in resp.data
+
+    def test_commands_has_settings_link(self, client):
+        resp = client.get("/commands")
         assert b'/settings' in resp.data
