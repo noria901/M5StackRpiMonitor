@@ -85,7 +85,7 @@
         .step-title {
             font-weight: bold;
         }
-        .port-select {
+        .port-select, .target-select {
             width: 100%;
             padding: 10px;
             background: #1a1a2e;
@@ -95,8 +95,39 @@
             font-size: 1em;
             margin-bottom: 8px;
         }
-        .port-select option {
+        .port-select option, .target-select option {
             background: #1a1a2e;
+        }
+        .target-options {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        .target-option {
+            flex: 1;
+            padding: 12px 16px;
+            background: #1a1a2e;
+            border: 2px solid #333;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .target-option:hover {
+            border-color: #555;
+        }
+        .target-option.selected {
+            border-color: #00d4ff;
+            background: #0f3460;
+        }
+        .target-option .target-name {
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .target-option .target-desc {
+            font-size: 0.8em;
+            color: #888;
         }
         .btn {
             padding: 10px 24px;
@@ -202,6 +233,7 @@
         <nav>
             <a href="/">Devices</a>
             <a href="/flash" class="active">Flash</a>
+            <a href="/deploy">Deploy</a>
             <a href="/commands">Commands</a>
             <a href="/settings">Settings</a>
         </nav>
@@ -212,10 +244,30 @@
                 M5StackをUSBで接続し、ワンクリックでファームウェアを書き込みます。
             </p>
 
-            <!-- Step 1: Port Selection -->
+            <!-- Step 1: Target Selection -->
             <div class="step">
                 <div class="step-header">
                     <span class="step-number">1</span>
+                    <span class="step-title">デバイスタイプを選択</span>
+                </div>
+                <div class="target-options">
+                    {% for key, label in targets.items() %}
+                    <div class="target-option {% if loop.first %}selected{% endif %}"
+                         data-target="{{ key }}" onclick="selectTarget('{{ key }}')">
+                        <div class="target-name">{{ label }}</div>
+                        <div class="target-desc">
+                            {% if key == 'm5stack' %}320x240 LCD{% elif key == 'm5dial' %}240x240 Round{% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <input type="hidden" id="targetSelect" value="m5stack">
+            </div>
+
+            <!-- Step 2: Port Selection -->
+            <div class="step">
+                <div class="step-header">
+                    <span class="step-number">2</span>
                     <span class="step-title">M5StackをUSBで接続</span>
                     <button class="btn btn-refresh" onclick="refreshPorts()">Refresh</button>
                 </div>
@@ -233,10 +285,10 @@
                 </div>
             </div>
 
-            <!-- Step 2: Flash -->
+            <!-- Step 3: Flash -->
             <div class="step">
                 <div class="step-header">
-                    <span class="step-number">2</span>
+                    <span class="step-number">3</span>
                     <span class="step-title">ビルド & 書き込み</span>
                 </div>
                 <button class="btn btn-flash" id="flashBtn" onclick="startFlash()"
@@ -258,6 +310,13 @@
 
     <script>
         let pollTimer = null;
+
+        function selectTarget(target) {
+            document.getElementById('targetSelect').value = target;
+            document.querySelectorAll('.target-option').forEach(el => {
+                el.classList.toggle('selected', el.dataset.target === target);
+            });
+        }
 
         async function refreshPorts() {
             const resp = await fetch('/api/serial-ports');
@@ -282,6 +341,7 @@
 
         async function startFlash() {
             const port = document.getElementById('portSelect').value;
+            const target = document.getElementById('targetSelect').value;
             if (!port) return;
 
             const flashBtn = document.getElementById('flashBtn');
@@ -295,7 +355,7 @@
             const resp = await fetch('/api/flash', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ port })
+                body: JSON.stringify({ port, target })
             });
 
             if (!resp.ok) {

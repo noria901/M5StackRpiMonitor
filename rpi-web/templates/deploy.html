@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPi Monitor - Deploy</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 30px;
+        }
+        header h1 { color: #00d4ff; font-size: 1.8em; margin-bottom: 8px; }
+        header p { color: #888; font-size: 0.9em; }
+        nav {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        nav a {
+            color: #00d4ff;
+            text-decoration: none;
+            margin: 0 12px;
+            padding: 6px 16px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        nav a:hover, nav a.active { background: #0f3460; }
+        .section {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            color: #00d4ff;
+            font-size: 1.1em;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #333;
+        }
+        .form-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .form-row label {
+            width: 80px;
+            color: #aaa;
+            font-size: 0.85em;
+            flex-shrink: 0;
+        }
+        .form-row select, .form-row input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            background: #1a1a2e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 0.95em;
+        }
+        .form-row select option { background: #1a1a2e; }
+        .git-info {
+            background: #0d1117;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+        .git-info .branch { color: #58a6ff; font-weight: bold; }
+        .git-info .hash { color: #d29922; }
+        .git-info .msg { color: #8b949e; }
+        .target-options {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .target-option {
+            flex: 1;
+            padding: 12px 16px;
+            background: #1a1a2e;
+            border: 2px solid #333;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .target-option:hover { border-color: #555; }
+        .target-option.selected {
+            border-color: #00d4ff;
+            background: #0f3460;
+        }
+        .target-option .target-name {
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .target-option .target-desc {
+            font-size: 0.8em;
+            color: #888;
+        }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-pull {
+            background: #0f3460;
+            color: #58a6ff;
+        }
+        .btn-build {
+            background: #1a3a1a;
+            color: #4caf50;
+        }
+        .btn-flash-action {
+            background: #3a3a1a;
+            color: #d29922;
+        }
+        .btn-all {
+            background: #00d4ff;
+            color: #000;
+            flex: 1;
+            padding: 14px;
+            font-size: 1em;
+        }
+        .btn-refresh {
+            background: #0f3460;
+            color: #00d4ff;
+            font-size: 0.85em;
+            padding: 6px 14px;
+        }
+        .status-bar {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+        .status-bar.visible { display: flex; }
+        .status-bar.pulling {
+            background: #1a1a3a;
+            border: 1px solid #2d2d5a;
+        }
+        .status-bar.building {
+            background: #1a3a1a;
+            border: 1px solid #2d5a2d;
+        }
+        .status-bar.flashing {
+            background: #3a3a1a;
+            border: 1px solid #5a5a2d;
+        }
+        .status-bar.done {
+            background: #0a3d0a;
+            border: 1px solid #4caf50;
+        }
+        .status-bar.error {
+            background: #3d0a0a;
+            border: 1px solid #ff4444;
+        }
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #555;
+            border-top-color: #00d4ff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .log-container {
+            background: #0d1117;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+            display: none;
+        }
+        .log-container.visible { display: block; }
+        .help-text {
+            color: #666;
+            font-size: 0.8em;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RPi Monitor</h1>
+            <p>Deploy Firmware</p>
+        </header>
+
+        <nav>
+            <a href="/">Devices</a>
+            <a href="/flash">Flash</a>
+            <a href="/deploy" class="active">Deploy</a>
+            <a href="/commands">Commands</a>
+            <a href="/settings">Settings</a>
+        </nav>
+
+        <!-- Git Section -->
+        <div class="section">
+            <h2>Git Repository</h2>
+
+            <div class="form-row">
+                <label>Branch:</label>
+                <select id="branchSelect">
+                    {% for b in branches %}
+                    <option value="{{ b.short }}"
+                            {% if b.short == git_info.branch %}selected{% endif %}>
+                        {{ b.short }}{% if b.is_remote %} (remote){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-refresh" onclick="refreshBranches()">Fetch</button>
+            </div>
+
+            <div class="git-info" id="gitInfo">
+                <span class="branch">{{ git_info.branch }}</span>
+                @ <span class="hash">{{ git_info.commit_hash }}</span>
+                <span class="msg">{{ git_info.commit_message }}</span>
+            </div>
+        </div>
+
+        <!-- Target & Port Section -->
+        <div class="section">
+            <h2>Target Device</h2>
+
+            <div class="target-options">
+                {% for key, label in targets.items() %}
+                <div class="target-option {% if loop.first %}selected{% endif %}"
+                     data-target="{{ key }}" onclick="selectTarget('{{ key }}')">
+                    <div class="target-name">{{ label }}</div>
+                    <div class="target-desc">
+                        {% if key == 'm5stack' %}320x240 LCD{% elif key == 'm5dial' %}240x240 Round{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <input type="hidden" id="targetSelect" value="m5stack">
+
+            <div class="form-row">
+                <label>Port:</label>
+                <select id="portSelect">
+                    {% if ports %}
+                        {% for p in ports %}
+                        <option value="{{ p.port }}">{{ p.port }} - {{ p.description }}</option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="" disabled selected>No device detected</option>
+                    {% endif %}
+                </select>
+                <button class="btn btn-refresh" onclick="refreshPorts()">Scan</button>
+            </div>
+            <div class="help-text">Flashステップにはポート選択が必要です。</div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="section">
+            <h2>Actions</h2>
+            <div class="btn-row">
+                <button class="btn btn-pull" id="btnPull" onclick="runDeploy(['pull'])">Pull</button>
+                <button class="btn btn-build" id="btnBuild" onclick="runDeploy(['build'])">Build</button>
+                <button class="btn btn-flash-action" id="btnFlash" onclick="runDeploy(['flash'])"
+                    {% if not ports %}disabled{% endif %}>Flash</button>
+                <button class="btn btn-all" id="btnAll" onclick="runDeploy(['pull','build','flash'])"
+                    {% if not ports %}disabled{% endif %}>Pull + Build + Flash</button>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div class="status-bar" id="statusBar">
+            <div class="spinner" id="statusSpinner"></div>
+            <span id="statusText"></span>
+        </div>
+
+        <!-- Log Output -->
+        <div class="log-container" id="logContainer"></div>
+    </div>
+
+    <script>
+        let pollTimer = null;
+
+        function selectTarget(target) {
+            document.getElementById('targetSelect').value = target;
+            document.querySelectorAll('.target-option').forEach(el => {
+                el.classList.toggle('selected', el.dataset.target === target);
+            });
+        }
+
+        async function refreshPorts() {
+            const resp = await fetch('/api/serial-ports');
+            const ports = await resp.json();
+            const select = document.getElementById('portSelect');
+            select.innerHTML = '';
+            if (ports.length === 0) {
+                select.innerHTML = '<option value="" disabled selected>No device detected</option>';
+                setFlashBtnsEnabled(false);
+            } else {
+                ports.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.port;
+                    opt.textContent = `${p.port} - ${p.description}`;
+                    select.appendChild(opt);
+                });
+                setFlashBtnsEnabled(true);
+            }
+        }
+
+        async function refreshBranches() {
+            // Fetch remote first
+            try {
+                const resp = await fetch('/api/deploy/branches');
+                const data = await resp.json();
+                const select = document.getElementById('branchSelect');
+                const current = select.value;
+                select.innerHTML = '';
+                data.branches.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.short;
+                    opt.textContent = b.short + (b.is_remote ? ' (remote)' : '');
+                    if (b.short === current) opt.selected = true;
+                    select.appendChild(opt);
+                });
+                // Update git info
+                const info = data.current;
+                document.getElementById('gitInfo').innerHTML =
+                    `<span class="branch">${info.branch}</span> @ <span class="hash">${info.commit_hash}</span> <span class="msg">${info.commit_message}</span>`;
+            } catch (err) {
+                alert('Error fetching branches: ' + err.message);
+            }
+        }
+
+        function setFlashBtnsEnabled(enabled) {
+            document.getElementById('btnFlash').disabled = !enabled;
+            document.getElementById('btnAll').disabled = !enabled;
+        }
+
+        function setAllBtnsDisabled(disabled) {
+            ['btnPull', 'btnBuild', 'btnFlash', 'btnAll'].forEach(id => {
+                document.getElementById(id).disabled = disabled;
+            });
+        }
+
+        async function runDeploy(steps) {
+            const branch = document.getElementById('branchSelect').value;
+            const target = document.getElementById('targetSelect').value;
+            const port = document.getElementById('portSelect').value;
+
+            // Validation
+            if (steps.includes('flash') && !port) {
+                alert('Flash にはポート選択が必要です');
+                return;
+            }
+
+            setAllBtnsDisabled(true);
+            const logEl = document.getElementById('logContainer');
+            logEl.classList.add('visible');
+            logEl.textContent = '';
+
+            try {
+                const resp = await fetch('/api/deploy/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ branch, target, port, steps })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    showStatus('error', err.message || 'Failed to start deploy');
+                    setAllBtnsDisabled(false);
+                    return;
+                }
+
+                // Poll for status
+                let lastLogLen = 0;
+                pollTimer = setInterval(async () => {
+                    const statusResp = await fetch('/api/deploy/status');
+                    const status = await statusResp.json();
+
+                    if (status.log.length > lastLogLen) {
+                        const newLines = status.log.slice(lastLogLen);
+                        logEl.textContent += newLines.join('\n') + '\n';
+                        logEl.scrollTop = logEl.scrollHeight;
+                        lastLogLen = status.log.length;
+                    }
+
+                    showStatus(status.state, status.message);
+
+                    if (status.state === 'done' || status.state === 'error') {
+                        clearInterval(pollTimer);
+                        setAllBtnsDisabled(false);
+                        // Refresh git info after pull
+                        if (steps.includes('pull') && status.state === 'done') {
+                            refreshGitInfo();
+                        }
+                    }
+                }, 500);
+
+            } catch (err) {
+                showStatus('error', 'Connection error: ' + err.message);
+                setAllBtnsDisabled(false);
+            }
+        }
+
+        async function refreshGitInfo() {
+            try {
+                const resp = await fetch('/api/deploy/git-info');
+                const info = await resp.json();
+                document.getElementById('gitInfo').innerHTML =
+                    `<span class="branch">${info.branch}</span> @ <span class="hash">${info.commit_hash}</span> <span class="msg">${info.commit_message}</span>`;
+            } catch (err) { /* ignore */ }
+        }
+
+        function showStatus(state, message) {
+            const bar = document.getElementById('statusBar');
+            const text = document.getElementById('statusText');
+            const spinner = document.getElementById('statusSpinner');
+
+            bar.className = 'status-bar visible ' + state;
+            text.textContent = message;
+            const active = ['pulling', 'building', 'flashing'].includes(state);
+            spinner.style.display = active ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>
