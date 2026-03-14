@@ -8,8 +8,8 @@ chcp 65001 >nul 2>&1
 
 set "IDF_VERSION=5.1.3"
 set "IDF_INSTALL_DIR=%USERPROFILE%\esp"
-set "IDF_PATH=%IDF_INSTALL_DIR%\esp-idf-v%IDF_VERSION%"
-set "IDF_TOOLS_PATH=%IDF_INSTALL_DIR%\tools"
+set "IDF_CLONE_PATH=%IDF_INSTALL_DIR%\esp-idf-v%IDF_VERSION%"
+set "IDF_CLONE_TOOLS=%IDF_INSTALL_DIR%\tools"
 set "SERIAL_PORT=auto"
 set "BAUD_RATE=1500000"
 set "SCRIPT_DIR=%~dp0"
@@ -123,13 +123,13 @@ if not exist "%IDF_INSTALL_DIR%" mkdir "%IDF_INSTALL_DIR%"
 :: Clone ESP-IDF
 echo.
 echo [3/5] Cloning ESP-IDF v%IDF_VERSION%...
-if exist "%IDF_PATH%\install.bat" (
-    echo   ESP-IDF already cloned at %IDF_PATH%
+if exist "%IDF_CLONE_PATH%\install.bat" (
+    echo   ESP-IDF already cloned at %IDF_CLONE_PATH%
     echo   Skipping clone.
 ) else (
-    if exist "%IDF_PATH%" rmdir /s /q "%IDF_PATH%"
+    if exist "%IDF_CLONE_PATH%" rmdir /s /q "%IDF_CLONE_PATH%"
     git clone -b v%IDF_VERSION% --recursive --depth 1 ^
-        https://github.com/espressif/esp-idf.git "%IDF_PATH%"
+        https://github.com/espressif/esp-idf.git "%IDF_CLONE_PATH%"
     if errorlevel 1 (
         echo ERROR: Failed to clone ESP-IDF.
         exit /b 1
@@ -139,8 +139,11 @@ if exist "%IDF_PATH%\install.bat" (
 :: Install ESP-IDF tools (Python venv, toolchain, etc.)
 echo.
 echo [4/5] Installing ESP-IDF tools (this may take a while)...
+set "IDF_PATH=%IDF_CLONE_PATH%"
+set "IDF_TOOLS_PATH=%IDF_CLONE_TOOLS%"
+echo   IDF_PATH       = %IDF_PATH%
 echo   IDF_TOOLS_PATH = %IDF_TOOLS_PATH%
-call "%IDF_PATH%\install.bat" esp32s3
+call "%IDF_CLONE_PATH%\install.bat" esp32s3
 if errorlevel 1 (
     echo.
     echo ERROR: install.bat failed.
@@ -156,7 +159,7 @@ call :activate_idf
 if errorlevel 1 (
     echo ERROR: ESP-IDF activation failed after setup.
     echo   Try running install.bat manually:
-    echo     cd "%IDF_PATH%"
+    echo     cd "%IDF_CLONE_PATH%"
     echo     install.bat esp32s3
     exit /b 1
 )
@@ -169,30 +172,13 @@ echo.
 exit /b 0
 
 :: ============================================================
-:: Check if ESP-IDF is available
-:: ============================================================
-:check_idf
-:: 1) Already on PATH (e.g. ESP-IDF CMD, or previous activation)
-where idf.py >nul 2>&1
-if not errorlevel 1 exit /b 0
-:: 2) Git-cloned version
-if exist "%IDF_PATH%\export.bat" exit /b 0
-:: 3) ESP-IDF Windows Installer default location
-if defined ESP_IDF_INSTALLER_PATH (
-    if exist "%ESP_IDF_INSTALLER_PATH%\export.bat" exit /b 0
-)
-for /f "tokens=*" %%d in ('dir /b /ad "%USERPROFILE%\esp\v*" 2^>nul') do (
-    if exist "%USERPROFILE%\esp\%%d\esp-idf\export.bat" exit /b 0
-)
-exit /b 1
-
-:: ============================================================
 :: Activate ESP-IDF environment
 :: ============================================================
 :activate_idf
 if "%IDF_ACTIVATED%"=="1" exit /b 0
 
 echo.
+echo Searching for ESP-IDF installation...
 
 :: Strategy 1: idf.py already on PATH (ESP-IDF CMD or env already set)
 where idf.py >nul 2>&1
@@ -203,29 +189,17 @@ if not errorlevel 1 (
 )
 
 :: Strategy 2: Try ESP-IDF Windows Installer locations
-:: Check common Espressif installer paths
-set "FOUND_IDF="
-for /f "tokens=*" %%d in ('dir /b /ad "%USERPROFILE%\esp\v*" 2^>nul') do (
-    if exist "%USERPROFILE%\esp\%%d\esp-idf\export.bat" (
-        set "FOUND_IDF=%USERPROFILE%\esp\%%d\esp-idf"
-    )
-)
-if defined FOUND_IDF (
-    echo Activating ESP-IDF from Windows Installer: %FOUND_IDF%
-    call "%FOUND_IDF%\export.bat"
-    where idf.py >nul 2>&1
-    if not errorlevel 1 (
-        set "IDF_ACTIVATED=1"
-        echo   ESP-IDF environment ready.
-        exit /b 0
-    )
-    echo   WARNING: export.bat ran but idf.py not found, trying next method...
-)
+:: Search: %USERPROFILE%\esp\v*\esp-idf, %USERPROFILE%\.espressif,
+::         C:\Espressif\frameworks\esp-idf-v*
+call :try_installer_idf
+if "%IDF_ACTIVATED%"=="1" exit /b 0
 
 :: Strategy 3: Git-cloned version (flash.bat setup)
-if exist "%IDF_PATH%\export.bat" (
-    echo Activating ESP-IDF v%IDF_VERSION% from %IDF_PATH%...
-    call "%IDF_PATH%\export.bat"
+if exist "%IDF_CLONE_PATH%\export.bat" (
+    echo Trying git-cloned ESP-IDF v%IDF_VERSION%...
+    set "IDF_PATH=%IDF_CLONE_PATH%"
+    set "IDF_TOOLS_PATH=%IDF_CLONE_TOOLS%"
+    call "%IDF_CLONE_PATH%\export.bat"
     where idf.py >nul 2>&1
     if not errorlevel 1 (
         set "IDF_ACTIVATED=1"
@@ -245,6 +219,44 @@ echo     3. Download ESP-IDF Windows Installer:
 echo        https://dl.espressif.com/dl/esp-idf/
 echo.
 exit /b 1
+
+:: ============================================================
+:: Search for ESP-IDF Windows Installer
+:: ============================================================
+:try_installer_idf
+:: Pattern A: %USERPROFILE%\esp\v5.x\esp-idf (newer offline installer)
+for /f "tokens=*" %%d in ('dir /b /ad "%USERPROFILE%\esp\v*" 2^>nul') do (
+    if exist "%USERPROFILE%\esp\%%d\esp-idf\export.bat" (
+        call :try_export "%USERPROFILE%\esp\%%d\esp-idf"
+        if "%IDF_ACTIVATED%"=="1" exit /b 0
+    )
+)
+:: Pattern B: C:\Espressif\frameworks\esp-idf-v* (older installer)
+for /f "tokens=*" %%d in ('dir /b /ad "C:\Espressif\frameworks\esp-idf-v*" 2^>nul') do (
+    if exist "C:\Espressif\frameworks\%%d\export.bat" (
+        call :try_export "C:\Espressif\frameworks\%%d"
+        if "%IDF_ACTIVATED%"=="1" exit /b 0
+    )
+)
+:: Pattern C: IDF_PATH already set externally but not yet activated
+if defined IDF_PATH (
+    if exist "%IDF_PATH%\export.bat" (
+        call :try_export "%IDF_PATH%"
+        if "%IDF_ACTIVATED%"=="1" exit /b 0
+    )
+)
+exit /b 0
+
+:try_export
+echo   Trying: %~1
+set "IDF_PATH=%~1"
+call "%~1\export.bat"
+where idf.py >nul 2>&1
+if not errorlevel 1 (
+    set "IDF_ACTIVATED=1"
+    echo   ESP-IDF environment ready. (from %~1)
+)
+exit /b 0
 
 :: ============================================================
 :: Build
