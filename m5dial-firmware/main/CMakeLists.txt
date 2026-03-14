@@ -18,15 +18,16 @@ set(APP_INCS
 )
 
 # NimBLE include paths (bt component INCLUDE_DIRS not propagated via REQUIRES)
+file(TO_CMAKE_PATH "$ENV{IDF_PATH}" IDF_PATH_CMAKE)
 set(NIMBLE_INCS
-    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/nimble/host/include
-    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/nimble/include
-    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/nimble/host/services/gap/include
-    $ENV{IDF_PATH}/components/bt/host/nimble/port/include
-    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/porting/nimble/include
-    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/porting/npl/freertos/include
-    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/nimble/transport/include
-    $ENV{IDF_PATH}/components/bt/porting/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/services/gap/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/port/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/porting/nimble/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/porting/npl/freertos/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/transport/include
+    ${IDF_PATH_CMAKE}/components/bt/porting/include
 )
 
 idf_component_register(SRCS "main.cpp" ${HAL_SRCS} ${APP_SRCS}
