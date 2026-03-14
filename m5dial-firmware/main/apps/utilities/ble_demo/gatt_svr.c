@@ -20,11 +20,15 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include "sdkconfig.h"
+#include "esp_log.h"
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "blehr_sens.h"
+
+static const char *TAG = "NimBLE_GATT";
 
 static const char *manuf_name = "Apache Mynewt ESP32 devkitC";
 static const char *model_num = "Mynewt HR Sensor demo";
@@ -138,21 +142,21 @@ gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
 
     switch (ctxt->op) {
     case BLE_GATT_REGISTER_OP_SVC:
-        MODLOG_DFLT(DEBUG, "registered service %s with handle=%d\n",
+        ESP_LOGD(TAG, "registered service %s with handle=%d",
                     ble_uuid_to_str(ctxt->svc.svc_def->uuid, buf),
                     ctxt->svc.handle);
         break;
 
     case BLE_GATT_REGISTER_OP_CHR:
-        MODLOG_DFLT(DEBUG, "registering characteristic %s with "
-                    "def_handle=%d val_handle=%d\n",
+        ESP_LOGD(TAG, "registering characteristic %s with "
+                    "def_handle=%d val_handle=%d",
                     ble_uuid_to_str(ctxt->chr.chr_def->uuid, buf),
                     ctxt->chr.def_handle,
                     ctxt->chr.val_handle);
         break;
 
     case BLE_GATT_REGISTER_OP_DSC:
-        MODLOG_DFLT(DEBUG, "registering descriptor %s with handle=%d\n",
+        ESP_LOGD(TAG, "registering descriptor %s with handle=%d",
                     ble_uuid_to_str(ctxt->dsc.dsc_def->uuid, buf),
                     ctxt->dsc.handle);
         break;
