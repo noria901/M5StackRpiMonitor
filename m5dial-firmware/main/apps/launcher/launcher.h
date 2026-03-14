@@ -25,6 +25,7 @@
 #include "../app_ble_server/app_ble_server.h"
 #include "../app_ble_scanner/app_ble_scanner.h"
 #include "../app_rpi_monitor/app_rpi_monitor.h"
+#include "../app_ota_update/app_ota_update.h"
 
 
 

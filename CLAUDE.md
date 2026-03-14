@@ -19,6 +19,7 @@ M5Stack Core / M5Dial を使った Raspberry Pi / Jetson Orin ステータスモ
 2. **m5dial-firmware/** - M5Dial用 ESP-IDF ファームウェア (M5Dial-UserDemo ベース)
 3. **rpi-daemon/** - RPi側 BLE常駐デーモン (Python)
 4. **rpi-web/** - RPi側 M5Stack登録管理 & ファームウェア書き込み Web UI (Flask)
+5. **tools/** - 開発用ツール (BLE OTAサーバー等)
 
 ## Tech Stack
 - **M5Stack Core**: C++ / Arduino framework / PlatformIO
@@ -73,6 +74,37 @@ M5Stack Core / M5Dial を使った Raspberry Pi / Jetson Orin ステータスモ
   ```json
   {"status": "ok"}
   ```
+
+## BLE OTA Update (ファームウェアリモート更新)
+開発PCからM5DialにBLE経由でファームウェアをリモート配信する仕組み。
+
+### アーキテクチャ
+```
+[開発PC] ble_ota_server.py (BLE GATT Server)
+    |
+    +-- BLE --> [M5Dial] OTA Update アプリ
+                  |
+                  +-- esp_ota_ops でフラッシュ書き込み
+                  +-- リブート → 新ファームウェアで起動
+```
+
+### OTA BLE Protocol
+- **Service UUID**: `12345678-1234-5678-9abc-def012345670`
+- **Info Char** (`...5671`, Read): `{"size": N, "chunk_size": 480, "name": "firmware.bin"}`
+- **Data Char** (`...5672`, Read): バイナリチャンク (最大480バイト)
+- **Control Char** (`...5673`, Write): 4バイトLE uint32でオフセットを指定
+
+### 使い方
+1. 開発PCでビルド: `cd m5dial-firmware && idf.py build`
+2. OTAサーバー起動: `sudo python3 tools/ble_ota_server.py build/m5dial.bin`
+3. M5Dialでランチャーから "OTA UPDATE" を選択
+4. スキャン → サーバー選択 → 自動転送 → リブート
+
+### パーティションテーブル
+OTA対応のため `factory` + `ota_0` 構成:
+- `factory` (3MB): USB書き込み用 (セーフフォールバック)
+- `ota_0` (3MB): OTA更新先
+- `storage` (~1.9MB): FATファイルシステム
 
 ## Auto-Connect (自動接続)
 M5Stackは一度登録したRPiに電源再投入後も自動で再接続する。
@@ -141,7 +173,16 @@ idf.py monitor              # Serial monitor
 ```
 - ESP-IDF v5.1.3 が必要
 - M5Dial-UserDemo ベースのランチャーUI
-- カスタムアプリ: BLE Scanner (`app_ble_scanner/`), RPi Monitor (`app_rpi_monitor/`)
+- カスタムアプリ: BLE Scanner (`app_ble_scanner/`), RPi Monitor (`app_rpi_monitor/`), OTA Update (`app_ota_update/`)
+
+### BLE OTA Server (開発PC)
+```bash
+cd tools
+pip install -r requirements.txt
+sudo python3 ble_ota_server.py ../m5dial-firmware/build/m5dial.bin
+```
+- Linux + BlueZ 5.43+ が必要
+- `sudo` は BlueZ D-Bus API アクセスに必要
 
 ### RPi Daemon
 ```bash

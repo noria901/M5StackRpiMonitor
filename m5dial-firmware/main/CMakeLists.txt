@@ -35,4 +35,4 @@ set(NIMBLE_INCS
 idf_component_register(SRCS "main.cpp" ${HAL_SRCS} ${APP_SRCS}
                     INCLUDE_DIRS "." ${HAL_INCS} ${APP_INCS} ${NIMBLE_INCS}
                     REQUIRES nvs_flash json LovyanGFX lvgl esp-idf-rc522 fatfs
-                    PRIV_REQUIRES bt esp_adc driver esp_wifi esp_event vfs wear_levelling led_strip)
+                    PRIV_REQUIRES bt esp_adc driver esp_wifi esp_event vfs wear_levelling led_strip app_update)

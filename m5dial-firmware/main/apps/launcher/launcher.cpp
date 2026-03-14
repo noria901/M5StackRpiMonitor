@@ -42,7 +42,7 @@ void Launcher::_menu_init()
     int a = 120;
     int b = 120;
     int r = 60;
-    int n = 10;
+    int n = ICON_NUM;
     int x;
     int y;
     for (int i = 0; i < n; i++)
@@ -74,7 +74,7 @@ void Launcher::_icon_list_init()
     int a = 120;
     int b = 120;
     int r = 190 / 2;
-    int n = 10;
+    int n = ICON_NUM;
     int x;
     int y;
     for (int i = 0; i < icon_list.size(); i++)
@@ -301,6 +301,9 @@ void Launcher::_app_open_callback(uint8_t selectedNum)
             break;
         case 9:
             app_ptr = new MOONCAKE::USER_APP::RpiMonitor;
+            break;
+        case 10:
+            app_ptr = new MOONCAKE::USER_APP::OtaUpdate;
             break;
         default:
             break;
