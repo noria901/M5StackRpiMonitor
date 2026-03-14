@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../utils/gui_base/gui_base.h"
+#include "../../utilities/gui_base/gui_base.h"
 #include "../app_ble_scanner.h"
 #include <vector>
 #include <string>

@@ -1,72 +1,126 @@
-#pragma once
-
 /**
- * APP_BASE stub header matching the real M5Dial-UserDemo API.
- *
- * In the actual build, this is provided by M5Dial-UserDemo's
- * MOONCAKE framework. This stub defines the interface for
- * standalone code review. Remove this file and use the real
- * UserDemo app.h when integrating.
+ * @file app.h
+ * @author Forairaaaaa
+ * @brief 
+ * @version 0.1
+ * @date 2023-05-07
+ * 
+ * @copyright Copyright (c) 2023
+ * 
  */
-
+#pragma once
+// #include <Arduino.h>
+#include <iostream>
 #include <string>
-#include <cstdint>
-#include <cstdio>
-#include "utils/gui_base/gui_base.h"
+#include "utilities/gui_base/gui_base.h"
 
-// Logging macro used by UserDemo apps
-#define _log(fmt, ...) printf("[%s] " fmt "\n", _tag, ##__VA_ARGS__)
-#define _log_mem() do {} while(0)
-
-// millis() compatibility
-#include <esp_timer.h>
-static inline unsigned long millis() {
-    return (unsigned long)(esp_timer_get_time() / 1000);
-}
 
 namespace MOONCAKE {
 
-class APP_BASE {
-private:
-    std::string _name;
-    void* _user_data = nullptr;
-    void* _icon_addr = nullptr;
-    bool _allow_bg_running = false;
-    bool _go_close = false;
-    bool _go_destroy = false;
 
-protected:
-    inline void setAppName(const std::string& name) { _name = name; }
-    inline void setAppIcon(void* icon) { _icon_addr = icon; }
-    inline void setAllowBgRunning(bool allow) { _allow_bg_running = allow; }
-    inline void closeApp() { _go_close = true; }
-    inline void destroyApp() { _go_destroy = true; }
-    inline void* getUserData() { return _user_data; }
+    /* Inherit and override "Life cycle" to create your own App */
+    class APP_BASE {
+        private:
+            std::string _name;
+            void* _user_data;
+            void* _icon_addr;
+            bool _allow_bg_running;
+            bool _go_close;
+            bool _go_destroy;
 
-public:
-    APP_BASE() = default;
-    virtual ~APP_BASE() = default;
 
-    inline void setUserData(void* userData) { _user_data = userData; }
-    virtual GUI_Base* getGui() { return nullptr; }
+        protected:
+            /* App internal API */
 
-    inline std::string getAppName() { return _name; }
-    inline void* getAppIcon() { return _icon_addr; }
-    inline bool isAllowBgRunning() { return _allow_bg_running; }
-    inline bool isGoingClose() { return _go_close; }
-    inline bool isGoingDestroy() { return _go_destroy; }
-    inline void resetGoingCloseFlag() { _go_close = false; }
-    inline void resetGoingDestroyFlag() { _go_destroy = false; }
+            /**
+             * @brief Set the App Name
+             * 
+             * @param name 
+             */
+            inline void setAppName(const std::string& name) { _name = name; }
 
-    virtual void onSetup() {}
-    virtual void onCreate() {}
-    virtual void onResume() {}
-    virtual void onRunning() {}
-    virtual void onRunningBG() {}
-    virtual void onPause() {}
-    virtual void onDestroy() {}
-};
+            /**
+             * @brief Set the App Icon
+             * 
+             * @param icon 
+             */
+            inline void setAppIcon(void* icon) { _icon_addr = icon; }
 
-namespace USER_APP {} // namespace placeholder
+            /**
+             * @brief Set if is App running background after closed
+             * 
+             * @param allow 
+             */
+            inline void setAllowBgRunning(bool allow) { _allow_bg_running = allow; }
 
-} // namespace MOONCAKE
+            /**
+             * @brief Close App 
+             * 
+             */
+            inline void closeApp() { _go_close = true; }
+
+            /**
+             * @brief Destroy App, not going background
+             * 
+             */
+            inline void destroyApp() { _go_destroy = true; }
+
+            /**
+             * @brief Get user data
+             * 
+             * @return void* 
+             */
+            inline void* getUserData() { return _user_data; };
+
+
+        public:
+            APP_BASE() :
+                _name(""),
+                _user_data(nullptr),
+                _icon_addr(nullptr),
+                _allow_bg_running(false),
+                _go_close(false),
+                _go_destroy(false) {}
+            virtual ~APP_BASE() {}
+
+
+            /* API for App manager */
+            inline void setUserData(void* userData) { _user_data = userData; }
+
+            /**
+             * @brief Get the Gui object
+             * 
+             * @return GUI_Base* 
+             */
+            virtual GUI_Base* getGui() { return nullptr; }
+
+            
+            /* Basic API */
+            inline std::string getAppName() { return _name; }
+            inline void* getAppIcon() { return _icon_addr; }
+            inline bool isAllowBgRunning() { return _allow_bg_running; }
+            inline bool isGoingClose() { return _go_close; }
+            inline bool isGoingDestroy() { return _go_destroy; }
+            inline void resetGoingCloseFlag() { _go_close = false; }
+            inline void resetGoingDestroyFlag() { _go_destroy = false; }
+
+
+            /**
+             * @brief Lifecycle callbacks for derived to override
+             * 
+             */
+            /* Setup App configs, called when App "install()" */
+            virtual void onSetup() {}
+
+            /* Life cycle */
+            virtual void onCreate() {}
+            virtual void onResume() {}
+            virtual void onRunning() {}
+            virtual void onRunningBG() {}
+            virtual void onPause() {}
+            virtual void onDestroy() {}
+
+    };
+
+
+}

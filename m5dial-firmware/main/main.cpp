@@ -1,49 +1,77 @@
 /**
- * M5Dial RPi Monitor - Main Entry Point
+ * @file va_meter_firmware.cpp
+ * @author Forairaaaaa
+ * @brief
+ * @version 0.1
+ * @date 2023-07-07
  *
- * This file provides a minimal standalone entry point for reference.
- * In the actual M5Dial-UserDemo integration, the main.cpp from
- * UserDemo handles HAL initialization and launches the Launcher app.
- * The RpiMonitor app is then started from the Launcher menu.
+ * @copyright Copyright (c) 2023
  *
- * For standalone testing (without the full UserDemo framework),
- * this main.cpp directly initializes the HAL and runs RpiMonitor.
  */
-
-#include <esp_log.h>
+#include "hal/hal.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include "apps/app_rpi_monitor/app_rpi_monitor.h"
 
-static const char* TAG = "main";
+#include "apps/app.h"
+#include "apps/launcher/launcher.h"
+#include "apps/app_factory_test/app_factory_test.h"
+
+#define delay(ms) vTaskDelay(pdMS_TO_TICKS(ms))
 
 extern "C" void app_main(void)
 {
-    ESP_LOGI(TAG, "M5Dial RPi Monitor starting...");
+    HAL::HAL hal;
 
-    // Initialize HAL
-    // Note: In the full UserDemo build, this is done by the framework.
-    // For standalone mode, you need to initialize the HAL manually:
-    //
-    //   HAL::HAL hal;
-    //   hal.init();
-    //
-    //   auto* app = new MOONCAKE::USER_APP::RpiMonitor;
-    //   app->setAppData(&hal);
-    //   app->onSetup();
-    //   app->onCreate();
-    //   while (!app->shouldDestroy()) {
-    //       app->onRunning();
-    //       vTaskDelay(pdMS_TO_TICKS(16));  // ~60fps
-    //   }
-    //   app->onDestroy();
-    //   delete app;
+    /* Hardware init */
+    hal.init();
+    // HAL::encoder_test(hal);
+    // HAL::tp_test(hal);
+    // HAL::rtc_test(hal);
 
-    ESP_LOGI(TAG, "Build OK - integrate with M5Dial-UserDemo for full functionality");
-    ESP_LOGI(TAG, "See launcher_rpi_patch.h for integration instructions");
+/* Check factory test mode */
+#ifdef ENABLE_FACTORY_TEST
+    bool factory_test_mode = false;
 
-    // Keep task alive
-    while (true) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    if (!hal.encoder.btn.read())
+    {
+        uint16_t time_count = 0;
+        while (!hal.encoder.btn.read())
+        {
+            delay(10);
+            time_count++;
+            if ((time_count * 10) > 1000)
+            {
+                factory_test_mode = true;
+                break;
+            }
+        }
+    }
+
+    // factory_test_mode = true;
+    if (factory_test_mode)
+    {
+        hal.buzz.tone(4000, 30);
+        delay(50);
+        hal.buzz.tone(4000, 30);
+
+        MOONCAKE::USER_APP::FactoryTest factory_test;
+        factory_test.setUserData((void*)&hal);
+        factory_test.onSetup();
+        factory_test.onCreate();
+        while (1)
+        {
+            factory_test.onRunning();
+        }
+    }
+#endif
+
+    /* Start launcher */
+    MOONCAKE::USER_APP::Launcher app_launcher;
+    app_launcher.setUserData((void*)&hal);
+    app_launcher.onSetup();
+    app_launcher.onCreate();
+    while (1)
+    {
+        app_launcher.onRunning();
     }
 }
