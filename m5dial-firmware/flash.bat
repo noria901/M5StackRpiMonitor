@@ -1,5 +1,4 @@
 @echo off
-setlocal enabledelayedexpansion
 chcp 65001 >nul 2>&1
 
 :: ============================================================
@@ -14,6 +13,7 @@ set "IDF_TOOLS_PATH=%IDF_INSTALL_DIR%\tools"
 set "SERIAL_PORT=auto"
 set "BAUD_RATE=1500000"
 set "SCRIPT_DIR=%~dp0"
+set "IDF_ACTIVATED=0"
 
 :: Parse arguments
 :parse_args
@@ -41,6 +41,7 @@ if errorlevel 1 (
     if errorlevel 1 goto :error
 )
 call :activate_idf
+if errorlevel 1 goto :error
 call :do_build
 if errorlevel 1 goto :error
 call :do_flash
@@ -122,10 +123,11 @@ if not exist "%IDF_INSTALL_DIR%" mkdir "%IDF_INSTALL_DIR%"
 :: Clone ESP-IDF
 echo.
 echo [3/5] Cloning ESP-IDF v%IDF_VERSION%...
-if exist "%IDF_PATH%" (
+if exist "%IDF_PATH%\install.bat" (
     echo   ESP-IDF already cloned at %IDF_PATH%
     echo   Skipping clone.
 ) else (
+    if exist "%IDF_PATH%" rmdir /s /q "%IDF_PATH%"
     git clone -b v%IDF_VERSION% --recursive --depth 1 ^
         https://github.com/espressif/esp-idf.git "%IDF_PATH%"
     if errorlevel 1 (
@@ -134,22 +136,28 @@ if exist "%IDF_PATH%" (
     )
 )
 
-:: Install ESP-IDF tools
+:: Install ESP-IDF tools (Python venv, toolchain, etc.)
 echo.
 echo [4/5] Installing ESP-IDF tools (this may take a while)...
-set "IDF_TOOLS_PATH=%IDF_TOOLS_PATH%"
+echo   IDF_TOOLS_PATH = %IDF_TOOLS_PATH%
 call "%IDF_PATH%\install.bat" esp32s3
 if errorlevel 1 (
-    echo ERROR: Failed to install ESP-IDF tools.
+    echo.
+    echo ERROR: install.bat failed.
+    echo   You may need to install ESP-IDF manually:
+    echo   https://docs.espressif.com/projects/esp-idf/en/v%IDF_VERSION%/esp32s3/get-started/windows-setup.html
     exit /b 1
 )
 
-:: Verify installation
+:: Verify installation by activating
 echo.
 echo [5/5] Verifying installation...
-call "%IDF_PATH%\export.bat"
-if not exist "%IDF_PATH%\tools\idf.py" (
-    echo ERROR: idf.py not found after setup.
+call :activate_idf
+if errorlevel 1 (
+    echo ERROR: ESP-IDF activation failed after setup.
+    echo   Try running install.bat manually:
+    echo     cd "%IDF_PATH%"
+    echo     install.bat esp32s3
     exit /b 1
 )
 
@@ -164,24 +172,40 @@ exit /b 0
 :: Check if ESP-IDF is installed
 :: ============================================================
 :check_idf
-if not exist "%IDF_PATH%\export.bat" (
-    exit /b 1
-)
+if not exist "%IDF_PATH%\export.bat" exit /b 1
+if not exist "%IDF_PATH%\install.bat" exit /b 1
 exit /b 0
 
 :: ============================================================
 :: Activate ESP-IDF environment
 :: ============================================================
 :activate_idf
+if "%IDF_ACTIVATED%"=="1" exit /b 0
+
 echo.
 echo Activating ESP-IDF v%IDF_VERSION%...
+
+:: Call export.bat - this sets PATH to include IDF Python venv and tools
 call "%IDF_PATH%\export.bat"
+
+:: Verify idf.py is now accessible
+where idf.py >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Failed to activate ESP-IDF.
+    echo.
+    echo ERROR: idf.py not found on PATH after export.bat
+    echo.
+    echo   This usually means ESP-IDF tools were not installed correctly.
+    echo   Try reinstalling:
+    echo     1. flash.bat setup
+    echo   Or install manually:
+    echo     https://docs.espressif.com/projects/esp-idf/en/v%IDF_VERSION%/esp32s3/get-started/windows-setup.html
+    echo.
+    echo   If you used the ESP-IDF Windows Installer, run this script
+    echo   from the "ESP-IDF CMD" shortcut instead of a normal terminal.
     exit /b 1
 )
-:: Set IDF_PY as full path fallback in case PATH didn't propagate
-set "IDF_PY=python "%IDF_PATH%\tools\idf.py""
+
+set "IDF_ACTIVATED=1"
 echo   ESP-IDF environment ready.
 exit /b 0
 
@@ -195,6 +219,7 @@ if errorlevel 1 (
     goto :end
 )
 call :activate_idf
+if errorlevel 1 goto :end
 call :do_build
 goto :end
 
@@ -205,12 +230,12 @@ echo  Building firmware...
 echo ============================================================
 echo.
 cd /d "%SCRIPT_DIR%"
-call %IDF_PY% set-target esp32s3
+call idf.py set-target esp32s3
 if errorlevel 1 (
     echo ERROR: Failed to set target.
     exit /b 1
 )
-call %IDF_PY% build
+call idf.py build
 if errorlevel 1 (
     echo ERROR: Build failed.
     exit /b 1
@@ -229,6 +254,7 @@ if errorlevel 1 (
     goto :end
 )
 call :activate_idf
+if errorlevel 1 goto :end
 call :do_flash
 goto :end
 
@@ -253,11 +279,11 @@ if /i "%SERIAL_PORT%"=="auto" (
 )
 
 echo Using port: %SERIAL_PORT%
-call %IDF_PY% -p %SERIAL_PORT% flash -b %BAUD_RATE%
+call idf.py -p %SERIAL_PORT% flash -b %BAUD_RATE%
 if errorlevel 1 (
     echo.
     echo Flash failed. Retrying with lower baud rate...
-    call %IDF_PY% -p %SERIAL_PORT% flash -b 460800
+    call idf.py -p %SERIAL_PORT% flash -b 460800
     if errorlevel 1 (
         echo ERROR: Flash failed.
         exit /b 1
@@ -277,6 +303,7 @@ if errorlevel 1 (
     goto :end
 )
 call :activate_idf
+if errorlevel 1 goto :end
 call :do_monitor
 goto :end
 
@@ -296,7 +323,7 @@ if /i "%SERIAL_PORT%"=="auto" (
     )
 )
 
-call %IDF_PY% -p %SERIAL_PORT% monitor
+call idf.py -p %SERIAL_PORT% monitor
 exit /b 0
 
 :: ============================================================
@@ -309,10 +336,11 @@ if errorlevel 1 (
     goto :end
 )
 call :activate_idf
+if errorlevel 1 goto :end
 echo.
 echo Cleaning build artifacts...
 cd /d "%SCRIPT_DIR%"
-call %IDF_PY% fullclean
+call idf.py fullclean
 echo Clean complete.
 goto :end
 
@@ -341,4 +369,3 @@ echo ============================================================
 exit /b 1
 
 :end
-endlocal
