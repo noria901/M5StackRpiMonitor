@@ -328,12 +328,12 @@ void RpiBleClient::forgetDevice()
     ESP_LOGI(TAG, "Device forgotten");
 }
 
-bool RpiBleClient::hasSavedServer()
+bool RpiBleClient::hasSavedServer() const
 {
     return !_savedServerName.empty();
 }
 
-std::string RpiBleClient::getSavedServerName()
+std::string RpiBleClient::getSavedServerName() const
 {
     return _savedServerName;
 }

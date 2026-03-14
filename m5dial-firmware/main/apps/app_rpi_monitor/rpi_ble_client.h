@@ -90,8 +90,8 @@ public:
     bool connectToDevice(int index);
     void disconnect();
     void forgetDevice();
-    bool hasSavedServer();
-    std::string getSavedServerName();
+    bool hasSavedServer() const;
+    std::string getSavedServerName() const;
     BleState getState() const { return _state; }
 
     bool readAll();
