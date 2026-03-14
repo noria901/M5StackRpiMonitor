@@ -12,7 +12,7 @@
 #include "../common_define.h"
 
 
-#define USE_LVGL_DEMO
+// #define USE_LVGL_DEMO
 
 
 #ifdef USE_LVGL_DEMO
