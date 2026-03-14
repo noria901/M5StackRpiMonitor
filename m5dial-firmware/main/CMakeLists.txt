@@ -17,24 +17,19 @@ set(APP_INCS
     apps/
 )
 
-
+# NimBLE include paths (bt component INCLUDE_DIRS not propagated via REQUIRES)
+set(NIMBLE_INCS
+    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/nimble/host/include
+    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/nimble/include
+    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/nimble/host/services/gap/include
+    $ENV{IDF_PATH}/components/bt/host/nimble/port/include
+    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/porting/nimble/include
+    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/porting/npl/freertos/include
+    $ENV{IDF_PATH}/components/bt/host/nimble/nimble/nimble/transport/include
+    $ENV{IDF_PATH}/components/bt/porting/include
+)
 
 idf_component_register(SRCS "main.cpp" ${HAL_SRCS} ${APP_SRCS}
-                    INCLUDE_DIRS "." ${HAL_INCS} ${APP_INCS}
+                    INCLUDE_DIRS "." ${HAL_INCS} ${APP_INCS} ${NIMBLE_INCS}
                     REQUIRES nvs_flash json LovyanGFX lvgl esp-idf-rc522 fatfs
                     PRIV_REQUIRES bt esp_adc driver)
-
-# Workaround: manually add NimBLE include paths
-# bt component's INCLUDE_DIRS are not propagated via REQUIRES/PRIV_REQUIRES
-idf_build_get_property(idf_path IDF_PATH)
-set(BT_DIR "${idf_path}/components/bt")
-target_include_directories(${COMPONENT_LIB} PRIVATE
-    "${BT_DIR}/host/nimble/nimble/nimble/host/include"
-    "${BT_DIR}/host/nimble/nimble/nimble/include"
-    "${BT_DIR}/host/nimble/nimble/nimble/host/services/gap/include"
-    "${BT_DIR}/host/nimble/port/include"
-    "${BT_DIR}/host/nimble/nimble/porting/nimble/include"
-    "${BT_DIR}/host/nimble/nimble/porting/npl/freertos/include"
-    "${BT_DIR}/host/nimble/nimble/nimble/transport/include"
-    "${BT_DIR}/porting/include"
-)
