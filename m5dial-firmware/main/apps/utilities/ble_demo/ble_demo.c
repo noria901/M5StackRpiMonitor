@@ -29,6 +29,7 @@
  * under the License.
  */
 
+#include "sdkconfig.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOSConfig.h"
