@@ -23,6 +23,7 @@ set(NIMBLE_INCS
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/services/gap/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/util/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/port/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/porting/nimble/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/porting/npl/freertos/include
