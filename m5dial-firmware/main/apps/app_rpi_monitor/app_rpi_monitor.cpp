@@ -97,6 +97,8 @@ void RpiMonitor::onRunning()
             case Screen::REGISTRATION:
                 _gui.drawRegistration(_ble, _regSelectedDevice, _regConfirmMode);
                 break;
+            default:
+                break;
         }
 
         // Draw page indicator dots (skip for Registration)

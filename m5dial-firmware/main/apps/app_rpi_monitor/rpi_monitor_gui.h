@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../hal/hal.h"
 #include "../app.h"
 #include "rpi_ble_client.h"
 
