@@ -155,7 +155,7 @@ void RpiMonitor::_handleEncoder()
     }
 
     // Buzzer feedback
-    _data.hal->buzz(4000, 20);
+    _data.hal->buzz.tone(4000, 20);
 
     _needsRedraw = true;
 }
@@ -180,7 +180,7 @@ void RpiMonitor::_handleButton()
         return;
     }
 
-    _data.hal->buzz(4000, 20);
+    _data.hal->buzz.tone(4000, 20);
     _needsRedraw = true;
 }
 
@@ -208,7 +208,7 @@ void RpiMonitor::_handleTouch()
             _ble.readAll();
             _lastDataUpdate = now;
         }
-        _data.hal->buzz(4000, 20);
+        _data.hal->buzz.tone(4000, 20);
         _needsRedraw = true;
     }
 }
