@@ -1,5 +1,7 @@
 #include "gui_ble_scanner.h"
+#include "../app_ble_scanner.h"
 #include <cstdio>
+#include <esp_timer.h>
 
 using MOONCAKE::USER_APP::BLE_SCANNER::FoundDevice;
 
@@ -56,7 +58,7 @@ void GUI_BLE_Scanner::renderPage(
         _canvas->drawCenterString("Scanning...", bubble.x, bubble.y - 10);
 
         // Animated dots
-        unsigned long ms = millis();
+        unsigned long ms = (unsigned long)(esp_timer_get_time() / 1000);
         int dot_count = (ms / 400) % 4;
         int dot_y = bubble.y + 16;
         for (int i = 0; i < 4; i++) {

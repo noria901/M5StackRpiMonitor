@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../../utilities/gui_base/gui_base.h"
-#include "../app_ble_scanner.h"
 #include <vector>
 #include <string>
 
