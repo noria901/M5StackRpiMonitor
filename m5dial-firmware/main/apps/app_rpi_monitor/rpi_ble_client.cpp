@@ -170,6 +170,9 @@ static void ble_on_reset(int reason)
 
 // ---- RpiBleClient Implementation ----
 
+// Shared NimBLE init guard
+#include "../utils/nimble_shared.h"
+
 void RpiBleClient::init()
 {
     g_instance = this;
@@ -183,16 +186,26 @@ void RpiBleClient::init()
 
     _loadSavedServer();
 
-    // Initialize NimBLE
-    nimble_port_init();
+    // Initialize NimBLE only if not already done (e.g. by BLE Scanner app)
+    if (!g_nimble_initialized) {
+        nimble_port_init();
 
-    ble_hs_cfg.sync_cb = ble_on_sync;
-    ble_hs_cfg.reset_cb = ble_on_reset;
+        ble_hs_cfg.sync_cb = ble_on_sync;
+        ble_hs_cfg.reset_cb = ble_on_reset;
 
-    ble_svc_gap_init();
-    ble_svc_gap_device_name_set("M5Dial-RpiMon");
+        ble_svc_gap_init();
+        ble_svc_gap_device_name_set("M5Dial-RpiMon");
 
-    nimble_port_freertos_init(nimble_host_task);
+        nimble_port_freertos_init(nimble_host_task);
+        g_nimble_initialized = true;
+
+        // Wait for NimBLE host sync
+        vTaskDelay(pdMS_TO_TICKS(500));
+    } else {
+        // NimBLE already running, just update callbacks
+        ble_hs_cfg.sync_cb = ble_on_sync;
+        ble_hs_cfg.reset_cb = ble_on_reset;
+    }
 
     ESP_LOGI(TAG, "BLE initialized, saved server: '%s'", _savedServerName.c_str());
 }

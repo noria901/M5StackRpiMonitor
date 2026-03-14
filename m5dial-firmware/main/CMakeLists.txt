@@ -13,6 +13,10 @@ set(HAL_INCS
 set(APP_INCS
     "apps"
     "apps/app_rpi_monitor"
+    "apps/app_ble_scanner"
+    "apps/app_ble_scanner/gui"
+    "apps/utils"
+    "apps/utils/gui_base"
     "apps/launcher"
 )
 

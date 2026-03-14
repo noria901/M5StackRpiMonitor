@@ -8,11 +8,12 @@ void RpiMonitor::onSetup()
 {
     setAppName("RPi Monitor");
     setAllowBgRunning(false);
+
+    _data.hal = (HAL::HAL*)getUserData();
 }
 
 void RpiMonitor::onCreate()
 {
-    _data.hal = (HAL::HAL*)getAppData();
     if (!_data.hal) {
         ESP_LOGE(_tag, "HAL is null");
         destroyApp();
