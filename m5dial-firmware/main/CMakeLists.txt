@@ -23,6 +23,7 @@ set(NIMBLE_INCS
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/services/gap/include
+    ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/services/gatt/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/nimble/host/util/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/port/include
     ${IDF_PATH_CMAKE}/components/bt/host/nimble/nimble/porting/nimble/include
@@ -34,4 +35,4 @@ set(NIMBLE_INCS
 idf_component_register(SRCS "main.cpp" ${HAL_SRCS} ${APP_SRCS}
                     INCLUDE_DIRS "." ${HAL_INCS} ${APP_INCS} ${NIMBLE_INCS}
                     REQUIRES nvs_flash json LovyanGFX lvgl esp-idf-rc522 fatfs
-                    PRIV_REQUIRES bt esp_adc driver esp_wifi esp_event)
+                    PRIV_REQUIRES bt esp_adc driver esp_wifi esp_event vfs wear_levelling led_strip)
