@@ -1,7 +1,6 @@
 ## IDF Component Manager Manifest File
 dependencies:
   espressif/led_strip: "^2.4.1"
-  lovyan03/LovyanGFX: "^1.2.0"
   ## Required IDF version
   idf:
     version: ">=4.1.0"
