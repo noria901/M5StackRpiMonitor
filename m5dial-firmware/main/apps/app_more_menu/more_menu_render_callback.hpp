@@ -105,7 +105,7 @@ struct MoreMenuRender_CB_t : public SMOOTH_MENU::SimpleMenuCallback_t
 
 
             /* Draw selector in difference stack */
-            _canvas->fillSmoothRoundRectInDifference(
+            _canvas->fillSmoothRoundRect(
                 selector.x,
                 // selector.x + (menuItemList[selector.targetItem]->width - selector.width) / 2,
                 menu_start_y_offset + (menuItemList[selector.targetItem]->height - selector.height) / 2,
