@@ -135,7 +135,7 @@ void BLE_Scanner::onSetup()
 
 void BLE_Scanner::onCreate()
 {
-    _log("onCreate");
+    ESP_LOGI(TAG, "onCreate");
 
     g_scanner = this;
 
@@ -227,7 +227,7 @@ void BLE_Scanner::onRunning()
 
 void BLE_Scanner::onDestroy()
 {
-    _log("onDestroy");
+    ESP_LOGI(TAG, "onDestroy");
     g_scanner = nullptr;
 
     // Stop scan if running
