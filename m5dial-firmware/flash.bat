@@ -147,9 +147,8 @@ if errorlevel 1 (
 :: Verify installation
 echo.
 echo [5/5] Verifying installation...
-call "%IDF_PATH%\export.bat" >nul 2>&1
-where idf.py >nul 2>&1
-if errorlevel 1 (
+call "%IDF_PATH%\export.bat"
+if not exist "%IDF_PATH%\tools\idf.py" (
     echo ERROR: idf.py not found after setup.
     exit /b 1
 )
@@ -176,11 +175,13 @@ exit /b 0
 :activate_idf
 echo.
 echo Activating ESP-IDF v%IDF_VERSION%...
-call "%IDF_PATH%\export.bat" >nul 2>&1
+call "%IDF_PATH%\export.bat"
 if errorlevel 1 (
     echo ERROR: Failed to activate ESP-IDF.
     exit /b 1
 )
+:: Set IDF_PY as full path fallback in case PATH didn't propagate
+set "IDF_PY=python "%IDF_PATH%\tools\idf.py""
 echo   ESP-IDF environment ready.
 exit /b 0
 
@@ -204,12 +205,12 @@ echo  Building firmware...
 echo ============================================================
 echo.
 cd /d "%SCRIPT_DIR%"
-idf.py set-target esp32s3
+call %IDF_PY% set-target esp32s3
 if errorlevel 1 (
     echo ERROR: Failed to set target.
     exit /b 1
 )
-idf.py build
+call %IDF_PY% build
 if errorlevel 1 (
     echo ERROR: Build failed.
     exit /b 1
@@ -252,11 +253,11 @@ if /i "%SERIAL_PORT%"=="auto" (
 )
 
 echo Using port: %SERIAL_PORT%
-idf.py -p %SERIAL_PORT% flash -b %BAUD_RATE%
+call %IDF_PY% -p %SERIAL_PORT% flash -b %BAUD_RATE%
 if errorlevel 1 (
     echo.
     echo Flash failed. Retrying with lower baud rate...
-    idf.py -p %SERIAL_PORT% flash -b 460800
+    call %IDF_PY% -p %SERIAL_PORT% flash -b 460800
     if errorlevel 1 (
         echo ERROR: Flash failed.
         exit /b 1
@@ -295,7 +296,7 @@ if /i "%SERIAL_PORT%"=="auto" (
     )
 )
 
-idf.py -p %SERIAL_PORT% monitor
+call %IDF_PY% -p %SERIAL_PORT% monitor
 exit /b 0
 
 :: ============================================================
@@ -311,7 +312,7 @@ call :activate_idf
 echo.
 echo Cleaning build artifacts...
 cd /d "%SCRIPT_DIR%"
-idf.py fullclean
+call %IDF_PY% fullclean
 echo Clean complete.
 goto :end
 
