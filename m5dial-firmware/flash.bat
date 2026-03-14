@@ -33,15 +33,15 @@ goto :show_help
 :args_done
 
 :: Default action: build + flash + monitor
-call :check_idf
+call :activate_idf
 if errorlevel 1 (
     echo.
     echo ESP-IDF not found. Running setup first...
     call :setup_idf
     if errorlevel 1 goto :error
+    call :activate_idf
+    if errorlevel 1 goto :error
 )
-call :activate_idf
-if errorlevel 1 goto :error
 call :do_build
 if errorlevel 1 goto :error
 call :do_flash
@@ -169,12 +169,22 @@ echo.
 exit /b 0
 
 :: ============================================================
-:: Check if ESP-IDF is installed
+:: Check if ESP-IDF is available
 :: ============================================================
 :check_idf
-if not exist "%IDF_PATH%\export.bat" exit /b 1
-if not exist "%IDF_PATH%\install.bat" exit /b 1
-exit /b 0
+:: 1) Already on PATH (e.g. ESP-IDF CMD, or previous activation)
+where idf.py >nul 2>&1
+if not errorlevel 1 exit /b 0
+:: 2) Git-cloned version
+if exist "%IDF_PATH%\export.bat" exit /b 0
+:: 3) ESP-IDF Windows Installer default location
+if defined ESP_IDF_INSTALLER_PATH (
+    if exist "%ESP_IDF_INSTALLER_PATH%\export.bat" exit /b 0
+)
+for /f "tokens=*" %%d in ('dir /b /ad "%USERPROFILE%\esp\v*" 2^>nul') do (
+    if exist "%USERPROFILE%\esp\%%d\esp-idf\export.bat" exit /b 0
+)
+exit /b 1
 
 :: ============================================================
 :: Activate ESP-IDF environment
@@ -183,43 +193,68 @@ exit /b 0
 if "%IDF_ACTIVATED%"=="1" exit /b 0
 
 echo.
-echo Activating ESP-IDF v%IDF_VERSION%...
 
-:: Call export.bat - this sets PATH to include IDF Python venv and tools
-call "%IDF_PATH%\export.bat"
-
-:: Verify idf.py is now accessible
+:: Strategy 1: idf.py already on PATH (ESP-IDF CMD or env already set)
 where idf.py >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo ERROR: idf.py not found on PATH after export.bat
-    echo.
-    echo   This usually means ESP-IDF tools were not installed correctly.
-    echo   Try reinstalling:
-    echo     1. flash.bat setup
-    echo   Or install manually:
-    echo     https://docs.espressif.com/projects/esp-idf/en/v%IDF_VERSION%/esp32s3/get-started/windows-setup.html
-    echo.
-    echo   If you used the ESP-IDF Windows Installer, run this script
-    echo   from the "ESP-IDF CMD" shortcut instead of a normal terminal.
-    exit /b 1
+if not errorlevel 1 (
+    echo   ESP-IDF already active in environment.
+    set "IDF_ACTIVATED=1"
+    exit /b 0
 )
 
-set "IDF_ACTIVATED=1"
-echo   ESP-IDF environment ready.
-exit /b 0
+:: Strategy 2: Try ESP-IDF Windows Installer locations
+:: Check common Espressif installer paths
+set "FOUND_IDF="
+for /f "tokens=*" %%d in ('dir /b /ad "%USERPROFILE%\esp\v*" 2^>nul') do (
+    if exist "%USERPROFILE%\esp\%%d\esp-idf\export.bat" (
+        set "FOUND_IDF=%USERPROFILE%\esp\%%d\esp-idf"
+    )
+)
+if defined FOUND_IDF (
+    echo Activating ESP-IDF from Windows Installer: %FOUND_IDF%
+    call "%FOUND_IDF%\export.bat"
+    where idf.py >nul 2>&1
+    if not errorlevel 1 (
+        set "IDF_ACTIVATED=1"
+        echo   ESP-IDF environment ready.
+        exit /b 0
+    )
+    echo   WARNING: export.bat ran but idf.py not found, trying next method...
+)
+
+:: Strategy 3: Git-cloned version (flash.bat setup)
+if exist "%IDF_PATH%\export.bat" (
+    echo Activating ESP-IDF v%IDF_VERSION% from %IDF_PATH%...
+    call "%IDF_PATH%\export.bat"
+    where idf.py >nul 2>&1
+    if not errorlevel 1 (
+        set "IDF_ACTIVATED=1"
+        echo   ESP-IDF environment ready.
+        exit /b 0
+    )
+)
+
+:: Nothing worked
+echo.
+echo ERROR: Could not activate ESP-IDF.
+echo.
+echo   Options:
+echo     1. Open "ESP-IDF CMD" shortcut and run flash.bat from there
+echo     2. Run "flash.bat setup" to install ESP-IDF v%IDF_VERSION%
+echo     3. Download ESP-IDF Windows Installer:
+echo        https://dl.espressif.com/dl/esp-idf/
+echo.
+exit /b 1
 
 :: ============================================================
 :: Build
 :: ============================================================
 :build_only
-call :check_idf
+call :activate_idf
 if errorlevel 1 (
-    echo ERROR: ESP-IDF not installed. Run "flash.bat setup" first.
+    echo ERROR: ESP-IDF not available. Run "flash.bat setup" or use ESP-IDF CMD.
     goto :end
 )
-call :activate_idf
-if errorlevel 1 goto :end
 call :do_build
 goto :end
 
@@ -248,13 +283,11 @@ exit /b 0
 :: Flash
 :: ============================================================
 :flash_only
-call :check_idf
+call :activate_idf
 if errorlevel 1 (
-    echo ERROR: ESP-IDF not installed. Run "flash.bat setup" first.
+    echo ERROR: ESP-IDF not available. Run "flash.bat setup" or use ESP-IDF CMD.
     goto :end
 )
-call :activate_idf
-if errorlevel 1 goto :end
 call :do_flash
 goto :end
 
@@ -297,13 +330,11 @@ exit /b 0
 :: Monitor
 :: ============================================================
 :monitor_only
-call :check_idf
+call :activate_idf
 if errorlevel 1 (
-    echo ERROR: ESP-IDF not installed. Run "flash.bat setup" first.
+    echo ERROR: ESP-IDF not available. Run "flash.bat setup" or use ESP-IDF CMD.
     goto :end
 )
-call :activate_idf
-if errorlevel 1 goto :end
 call :do_monitor
 goto :end
 
@@ -330,13 +361,11 @@ exit /b 0
 :: Clean
 :: ============================================================
 :clean_only
-call :check_idf
+call :activate_idf
 if errorlevel 1 (
-    echo ERROR: ESP-IDF not installed. Run "flash.bat setup" first.
+    echo ERROR: ESP-IDF not available. Run "flash.bat setup" or use ESP-IDF CMD.
     goto :end
 )
-call :activate_idf
-if errorlevel 1 goto :end
 echo.
 echo Cleaning build artifacts...
 cd /d "%SCRIPT_DIR%"
