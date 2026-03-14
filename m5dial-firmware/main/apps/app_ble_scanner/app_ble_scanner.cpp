@@ -1,5 +1,6 @@
 #include "app_ble_scanner.h"
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <nvs_flash.h>
 #include <nvs.h>
 #include <cstring>
@@ -182,14 +183,15 @@ void BLE_Scanner::onRunning()
     }
 
     // Render
-    if ((millis() - _data.page_update_time_count) > _data.page_update_interval) {
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    if ((now - _data.page_update_time_count) > _data.page_update_interval) {
         _gui.renderPage(
             _data.scanning,
             _data.devices,
             _data.selected_index,
             _data.saved_name
         );
-        _data.page_update_time_count = millis();
+        _data.page_update_time_count = now;
     }
 
     // Button press

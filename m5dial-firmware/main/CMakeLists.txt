@@ -21,4 +21,5 @@ set(APP_INCS
 
 idf_component_register(SRCS "main.cpp" ${HAL_SRCS} ${APP_SRCS}
                     INCLUDE_DIRS "." ${HAL_INCS} ${APP_INCS}
-                    REQUIRES bt nvs_flash json LovyanGFX lvgl esp-idf-rc522 fatfs esp_adc)
+                    REQUIRES nvs_flash json LovyanGFX lvgl esp-idf-rc522 fatfs
+                    PRIV_REQUIRES bt esp_adc driver)
