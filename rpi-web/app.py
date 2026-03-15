@@ -190,9 +190,16 @@ def _check_idf_version(idf_dir: str) -> bool:
 
 def _install_idf(log_fn) -> bool:
     """Download and install ESP-IDF. Returns True on success."""
+    import shutil
+
     idf_dir = IDF_DEFAULT_DIR
     parent_dir = os.path.dirname(idf_dir)
     os.makedirs(parent_dir, exist_ok=True)
+
+    # Remove leftover directory (e.g. partial clone, version mismatch)
+    if os.path.exists(idf_dir):
+        log_fn(f"Removing existing {idf_dir} ...")
+        shutil.rmtree(idf_dir, ignore_errors=True)
 
     # Step 1: Clone ESP-IDF
     log_fn(f"Cloning ESP-IDF {IDF_VERSION} into {idf_dir} ...")
@@ -738,7 +745,8 @@ def api_idf_status():
 
 @app.route("/api/deploy/branches", methods=["GET"])
 def api_deploy_branches():
-    """API: Get git branches."""
+    """API: Get git branches (fetches remote first)."""
+    _git_run("fetch", "--prune", "origin")
     return jsonify({
         "branches": get_git_branches(),
         "current": get_git_info(),
