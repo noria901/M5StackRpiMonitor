@@ -123,9 +123,12 @@ void RpiMonitor::onRunning()
             _gui.drawPageIndicator(screenIdx, SCREEN_COUNT - 1);  // -1 to exclude Registration
         }
 
-        // Show disconnected overlay if not connected and not on Registration screen
+        // Show disconnected overlay on data screens only
+        // (skip Registration, Settings, QR Code - they work without connection)
         if (_ble.getState() != BleState::CONNECTED &&
-            _currentScreen != Screen::REGISTRATION)
+            _currentScreen != Screen::REGISTRATION &&
+            _currentScreen != Screen::SETTINGS &&
+            _currentScreen != Screen::QR_CODE)
         {
             _gui.drawDisconnectedOverlay(_ble.hasSavedServer(),
                                           _ble.getSavedServerName().c_str());
@@ -155,37 +158,30 @@ void RpiMonitor::_handleEncoder()
     int dir = _data.hal->encoder.getDirection();
     // dir < 1 = CW (next), dir >= 1 = CCW (prev)
 
-    if (_currentScreen == Screen::REGISTRATION) {
-        if (dir < 1) {
-            _registrationScrollDown(_ble.getFoundDeviceCount());
-        } else {
-            _registrationScrollUp();
-        }
-    } else if (_currentScreen == Screen::SERVICES) {
-        if (dir < 1) {
-            _listScrollDown(_svcSelectedIndex, _svcConfirmMode, _ble.getServiceCount());
-        } else {
-            _listScrollUp(_svcSelectedIndex, _svcConfirmMode);
-        }
-    } else if (_currentScreen == Screen::POWER_MENU) {
-        if (dir < 1) {
-            _listScrollDown(_pwrSelectedIndex, _pwrConfirmMode, 2);
-        } else {
-            _listScrollUp(_pwrSelectedIndex, _pwrConfirmMode);
-        }
-    } else if (_currentScreen == Screen::COMMANDS) {
-        if (dir < 1) {
-            _listScrollDown(_cmdSelectedIndex, _cmdConfirmMode, _ble.getCommandCount());
-        } else {
-            _listScrollUp(_cmdSelectedIndex, _cmdConfirmMode);
-        }
-    } else {
-        // Normal: encoder switches screens
-        if (dir < 1) {
-            _nextScreen();
-        } else {
-            _prevScreen();
-        }
+    // List screens: encoder scrolls items within the list
+    // All other screens: encoder switches between screens
+    switch (_currentScreen) {
+        case Screen::REGISTRATION:
+            if (dir < 1) _registrationScrollDown(_ble.getFoundDeviceCount());
+            else         _registrationScrollUp();
+            break;
+        case Screen::SERVICES:
+            if (dir < 1) _listScrollDown(_svcSelectedIndex, _svcConfirmMode, _ble.getServiceCount());
+            else         _listScrollUp(_svcSelectedIndex, _svcConfirmMode);
+            break;
+        case Screen::POWER_MENU:
+            if (dir < 1) _listScrollDown(_pwrSelectedIndex, _pwrConfirmMode, 2);
+            else         _listScrollUp(_pwrSelectedIndex, _pwrConfirmMode);
+            break;
+        case Screen::COMMANDS:
+            if (dir < 1) _listScrollDown(_cmdSelectedIndex, _cmdConfirmMode, _ble.getCommandCount());
+            else         _listScrollUp(_cmdSelectedIndex, _cmdConfirmMode);
+            break;
+        default:
+            // Display / settings screens: encoder navigates between screens
+            if (dir < 1) _nextScreen();
+            else         _prevScreen();
+            break;
     }
 
     // Buzzer feedback
@@ -202,24 +198,32 @@ void RpiMonitor::_handleButton()
     if (now - _lastButtonPress < BUTTON_DEBOUNCE_MS) return;
     _lastButtonPress = now;
 
-    if (_currentScreen == Screen::REGISTRATION) {
-        _registrationAction();
-    } else if (_currentScreen == Screen::SERVICES) {
-        _servicesAction();
-    } else if (_currentScreen == Screen::POWER_MENU) {
-        _powerAction();
-    } else if (_currentScreen == Screen::COMMANDS) {
-        _commandsAction();
-    } else if (_currentScreen == Screen::SETTINGS) {
-        _settingsAction();
-    } else if (_ble.getState() == BleState::CONNECTED) {
-        // Connected: button forces data refresh
-        _ble.readAll();
-        _lastDataUpdate = (unsigned long)(esp_timer_get_time() / 1000);
-    } else if (!_ble.hasSavedServer()) {
-        // Not connected, no saved server: go back to launcher
-        destroyApp();
-        return;
+    switch (_currentScreen) {
+        case Screen::REGISTRATION:
+            _registrationAction();
+            break;
+        case Screen::SERVICES:
+            _servicesAction();
+            break;
+        case Screen::POWER_MENU:
+            _powerAction();
+            break;
+        case Screen::COMMANDS:
+            _commandsAction();
+            break;
+        case Screen::SETTINGS:
+            _settingsAction();
+            break;
+        default:
+            // Display screens: button forces data refresh or exits app
+            if (_ble.getState() == BleState::CONNECTED) {
+                _ble.readAll();
+                _lastDataUpdate = (unsigned long)(esp_timer_get_time() / 1000);
+            } else if (!_ble.hasSavedServer()) {
+                destroyApp();
+                return;
+            }
+            break;
     }
 
     _data.hal->buzz.tone(4000, 20);
@@ -244,19 +248,19 @@ void RpiMonitor::_handleTouch()
         if (now - _lastButtonPress < BUTTON_DEBOUNCE_MS) return;
         _lastButtonPress = now;
 
-        if (_currentScreen == Screen::REGISTRATION) {
-            _registrationAction();
-        } else if (_currentScreen == Screen::SERVICES) {
-            _servicesAction();
-        } else if (_currentScreen == Screen::POWER_MENU) {
-            _powerAction();
-        } else if (_currentScreen == Screen::COMMANDS) {
-            _commandsAction();
-        } else if (_currentScreen == Screen::SETTINGS) {
-            _settingsAction();
-        } else if (_ble.getState() == BleState::CONNECTED) {
-            _ble.readAll();
-            _lastDataUpdate = now;
+        // Center tap = same as button press (reuse _handleButton logic)
+        switch (_currentScreen) {
+            case Screen::REGISTRATION:  _registrationAction(); break;
+            case Screen::SERVICES:      _servicesAction(); break;
+            case Screen::POWER_MENU:    _powerAction(); break;
+            case Screen::COMMANDS:      _commandsAction(); break;
+            case Screen::SETTINGS:      _settingsAction(); break;
+            default:
+                if (_ble.getState() == BleState::CONNECTED) {
+                    _ble.readAll();
+                    _lastDataUpdate = now;
+                }
+                break;
         }
         _data.hal->buzz.tone(4000, 20);
         _needsRedraw = true;
