@@ -184,6 +184,10 @@
         .status-bar.visible {
             display: flex;
         }
+        .status-bar.setup {
+            background: #1a2a3a;
+            border: 1px solid #2d4a6d;
+        }
         .status-bar.building {
             background: #1a3a1a;
             border: 1px solid #2d5a2d;
@@ -399,7 +403,7 @@
 
             bar.className = 'status-bar visible ' + state;
             text.textContent = message;
-            spinner.style.display = (state === 'building' || state === 'flashing') ? 'block' : 'none';
+            spinner.style.display = (state === 'setup' || state === 'building' || state === 'flashing') ? 'block' : 'none';
         }
     </script>
 </body>

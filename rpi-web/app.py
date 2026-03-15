@@ -122,21 +122,130 @@ def _get_firmware_dir(target: str) -> str | None:
     return t["dir"] if t else None
 
 
-def _run_build(target: str, firmware_dir: str, log_fn) -> int:
-    """Run the build command for a target. Returns exit code."""
-    t = FIRMWARE_TARGETS[target]
-    if t["build_tool"] == "pio":
-        cmd = ["pio", "run"]
-    else:
-        cmd = ["idf.py", "build"]
+# --- ESP-IDF environment helpers ---
+
+# Default install location
+IDF_DEFAULT_DIR = os.environ.get("IDF_PATH", os.path.expanduser("~/esp/esp-idf"))
+IDF_VERSION = os.environ.get("IDF_VERSION", "v5.1.3")
+
+# Setup progress (shared state for polling)
+idf_setup_status: dict = {
+    "state": "idle",  # idle, installing, done, error
+    "message": "",
+    "log": [],
+}
+
+
+def _find_idf_export_sh() -> str | None:
+    """Find export.sh in known ESP-IDF locations."""
+    candidates = [
+        os.path.join(IDF_DEFAULT_DIR, "export.sh"),
+        os.path.expanduser("~/esp/esp-idf/export.sh"),
+        "/opt/esp-idf/export.sh",
+    ]
+    # Also check IDF_PATH env
+    idf_path = os.environ.get("IDF_PATH")
+    if idf_path:
+        candidates.insert(0, os.path.join(idf_path, "export.sh"))
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _is_idf_installed() -> bool:
+    """Check if ESP-IDF is installed and export.sh exists."""
+    return _find_idf_export_sh() is not None
+
+
+def _install_idf(log_fn) -> bool:
+    """Download and install ESP-IDF. Returns True on success."""
+    idf_dir = IDF_DEFAULT_DIR
+    parent_dir = os.path.dirname(idf_dir)
+    os.makedirs(parent_dir, exist_ok=True)
+
+    # Step 1: Clone ESP-IDF
+    log_fn(f"Cloning ESP-IDF {IDF_VERSION} into {idf_dir} ...")
     proc = subprocess.Popen(
-        cmd, cwd=firmware_dir,
+        [
+            "git", "clone", "--branch", IDF_VERSION, "--depth", "1",
+            "--recursive", "--shallow-submodules",
+            "https://github.com/espressif/esp-idf.git",
+            idf_dir,
+        ],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    for line in iter(proc.stdout.readline, ""):
+        log_fn(line.rstrip())
+    proc.wait()
+    if proc.returncode != 0:
+        log_fn(f"git clone failed (exit code {proc.returncode})")
+        return False
+
+    # Step 2: Run install.sh
+    log_fn("")
+    log_fn("Running install.sh (downloading toolchain, this may take a while) ...")
+    proc = subprocess.Popen(
+        ["bash", os.path.join(idf_dir, "install.sh"), "esp32s3"],
+        cwd=idf_dir,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    for line in iter(proc.stdout.readline, ""):
+        log_fn(line.rstrip())
+    proc.wait()
+    if proc.returncode != 0:
+        log_fn(f"install.sh failed (exit code {proc.returncode})")
+        return False
+
+    log_fn("")
+    log_fn("ESP-IDF installation complete.")
+    return True
+
+
+def _ensure_idf_installed(log_fn) -> bool:
+    """Check if ESP-IDF is installed; install it if not. Returns True if ready."""
+    if _is_idf_installed():
+        log_fn("ESP-IDF found.")
+        return True
+
+    log_fn("ESP-IDF not found. Starting automatic installation...")
+    log_fn("")
+    return _install_idf(log_fn)
+
+
+def _run_shell_with_idf(shell_cmd: str, cwd: str, log_fn) -> int:
+    """Run a shell command with ESP-IDF environment sourced."""
+    export_sh = _find_idf_export_sh()
+    if not export_sh:
+        log_fn("Error: ESP-IDF export.sh not found")
+        return 1
+    full_cmd = f'. "{export_sh}" > /dev/null 2>&1 && {shell_cmd}'
+    proc = subprocess.Popen(
+        ["bash", "-c", full_cmd],
+        cwd=cwd,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     for line in iter(proc.stdout.readline, ""):
         log_fn(line.rstrip())
     proc.wait()
     return proc.returncode
+
+
+def _run_build(target: str, firmware_dir: str, log_fn) -> int:
+    """Run the build command for a target. Returns exit code."""
+    t = FIRMWARE_TARGETS[target]
+    if t["build_tool"] == "pio":
+        cmd = ["pio", "run"]
+        proc = subprocess.Popen(
+            cmd, cwd=firmware_dir,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        for line in iter(proc.stdout.readline, ""):
+            log_fn(line.rstrip())
+        proc.wait()
+        return proc.returncode
+    else:
+        return _run_shell_with_idf("idf.py build", firmware_dir, log_fn)
 
 
 def _run_flash_cmd(target: str, firmware_dir: str, port: str, log_fn) -> int:
@@ -144,16 +253,18 @@ def _run_flash_cmd(target: str, firmware_dir: str, port: str, log_fn) -> int:
     t = FIRMWARE_TARGETS[target]
     if t["build_tool"] == "pio":
         cmd = ["pio", "run", "-t", "upload", "--upload-port", port]
+        proc = subprocess.Popen(
+            cmd, cwd=firmware_dir,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        for line in iter(proc.stdout.readline, ""):
+            log_fn(line.rstrip())
+        proc.wait()
+        return proc.returncode
     else:
-        cmd = ["idf.py", "-p", port, "flash"]
-    proc = subprocess.Popen(
-        cmd, cwd=firmware_dir,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    for line in iter(proc.stdout.readline, ""):
-        log_fn(line.rstrip())
-    proc.wait()
-    return proc.returncode
+        return _run_shell_with_idf(
+            f"idf.py -p {port} flash", firmware_dir, log_fn,
+        )
 
 
 def run_flash(port: str, target: str = "m5stack") -> None:
@@ -166,7 +277,7 @@ def run_flash(port: str, target: str = "m5stack") -> None:
         return
 
     with flash_lock:
-        flash_status = {"state": "building", "message": "Building firmware...", "log": []}
+        flash_status = {"state": "setup", "message": "Checking build environment...", "log": []}
 
     def log(msg: str) -> None:
         flash_status["log"].append(msg)
@@ -174,6 +285,17 @@ def run_flash(port: str, target: str = "m5stack") -> None:
 
     try:
         target_label = FIRMWARE_TARGETS[target]["label"]
+
+        # ESP-IDF targets need idf.py
+        if FIRMWARE_TARGETS[target]["build_tool"] == "idf":
+            log("=== Checking ESP-IDF environment ===")
+            if not _ensure_idf_installed(log):
+                flash_status["state"] = "error"
+                log("ESP-IDF setup failed.")
+                return
+            log("")
+
+        flash_status["state"] = "building"
         log(f"=== Building {target_label} firmware ===")
 
         rc = _run_build(target, firmware_dir, log)
@@ -324,6 +446,16 @@ def run_deploy(branch: str, target: str, port: str, steps: list[str]) -> None:
                 log(f"git pull failed (exit code {proc.returncode})")
                 return
 
+            log("")
+
+        # Step 1.5: Ensure ESP-IDF if needed
+        if ("build" in steps or "flash" in steps) and FIRMWARE_TARGETS[target]["build_tool"] == "idf":
+            deploy_status["state"] = "setup"
+            log("=== Checking ESP-IDF environment ===")
+            if not _ensure_idf_installed(log):
+                deploy_status["state"] = "error"
+                log("ESP-IDF setup failed.")
+                return
             log("")
 
         # Step 2: Build
@@ -516,7 +648,7 @@ def api_serial_ports():
 @app.route("/api/flash", methods=["POST"])
 def api_flash():
     """API: Start firmware build & flash."""
-    if flash_status["state"] in ("building", "flashing"):
+    if flash_status["state"] in ("setup", "building", "flashing"):
         return jsonify({"status": "error", "message": "Flash already in progress"}), 409
 
     data = request.get_json()
@@ -541,6 +673,16 @@ def api_flash():
 def api_flash_status():
     """API: Get current flash progress."""
     return jsonify(flash_status)
+
+
+@app.route("/api/idf/status", methods=["GET"])
+def api_idf_status():
+    """API: Check ESP-IDF installation status."""
+    return jsonify({
+        "installed": _is_idf_installed(),
+        "idf_dir": IDF_DEFAULT_DIR,
+        "version": IDF_VERSION,
+    })
 
 
 # === Deploy API ===

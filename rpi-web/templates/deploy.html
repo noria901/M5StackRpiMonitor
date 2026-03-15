@@ -170,6 +170,10 @@
             background: #1a1a3a;
             border: 1px solid #2d2d5a;
         }
+        .status-bar.setup {
+            background: #1a2a3a;
+            border: 1px solid #2d4a6d;
+        }
         .status-bar.building {
             background: #1a3a1a;
             border: 1px solid #2d5a2d;
@@ -453,7 +457,7 @@
 
             bar.className = 'status-bar visible ' + state;
             text.textContent = message;
-            const active = ['pulling', 'building', 'flashing'].includes(state);
+            const active = ['pulling', 'setup', 'building', 'flashing'].includes(state);
             spinner.style.display = active ? 'block' : 'none';
         }
     </script>
