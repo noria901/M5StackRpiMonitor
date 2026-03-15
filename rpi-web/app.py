@@ -8,6 +8,8 @@ import subprocess
 import threading
 from pathlib import Path
 
+import sys
+
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 
 app = Flask(__name__)
@@ -835,6 +837,28 @@ def api_deploy_start():
 def api_deploy_status():
     """API: Get current deploy progress."""
     return jsonify(deploy_status)
+
+
+def _get_ros2_info_fn():
+    """Lazy-import get_ros2_info from rpi-daemon/system_info.py."""
+    daemon_path = os.path.join(os.path.dirname(__file__), "..", "rpi-daemon")
+    if daemon_path not in sys.path:
+        sys.path.insert(0, daemon_path)
+    from system_info import get_ros2_info
+    return get_ros2_info
+
+
+@app.route("/ros2")
+def ros2_page():
+    """ROS2 monitoring page."""
+    return render_template("ros2.html")
+
+
+@app.route("/api/ros2")
+def api_ros2():
+    """API: Get ROS2 node and topic information."""
+    get_ros2_info = _get_ros2_info_fn()
+    return jsonify(get_ros2_info())
 
 
 if __name__ == "__main__":

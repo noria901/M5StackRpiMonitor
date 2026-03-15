@@ -385,107 +385,368 @@ void RpiMonitorGui::drawSystemInfo(const RpiBleClient& ble)
     }
 }
 
-// ---- Registration Screen ----
+// ---- Services Screen ----
 
-void RpiMonitorGui::drawRegistration(const RpiBleClient& ble, int selectedDevice,
-                                      bool confirmMode)
+void RpiMonitorGui::drawServices(const RpiBleClient& ble, int selectedIndex, bool confirmMode)
 {
-    _drawTitle("Register");
+    _drawTitle("Services");
 
     auto* c = _hal->canvas;
-    BleState state = ble.getState();
+    int count = ble.getServiceCount();
 
-    if (state == BleState::CONNECTED) {
-        int y = 80;
-        _drawCenteredText(y, "Connected", COL_GOOD, &fonts::Font2);
-        y += 24;
-        _drawCenteredText(y, ble.getSavedServerName().c_str(), COL_ACCENT, &fonts::Font2);
-        y += 36;
-        _drawCenteredText(y, "Press to disconnect", COL_TEXT_DIM, &fonts::Font0);
-        return;
-    }
-
-    if (state == BleState::SCANNING) {
-        _drawCenteredText(100, "Scanning...", COL_ACCENT, &fonts::Font2);
-
-        // Spinning animation dots
-        unsigned long ms = (unsigned long)(esp_timer_get_time() / 1000);
-        int dotIdx = (ms / 300) % 4;
-        for (int i = 0; i < 4; i++) {
-            uint16_t col = (i == dotIdx) ? COL_ACCENT : COL_TEXT_DIM;
-            c->fillCircle(CENTER_X - 24 + i * 16, 130, 3, col);
-        }
-        return;
-    }
-
-    if (state == BleState::CONNECTING) {
-        _drawCenteredText(100, "Connecting...", COL_WARN, &fonts::Font2);
-        return;
-    }
-
-    int count = ble.getFoundDeviceCount();
     if (count == 0) {
-        int y = 80;
-        _drawCenteredText(y, "No devices", COL_TEXT_DIM, &fonts::Font2);
-        y += 30;
-        _drawCenteredText(y, "Press button to", COL_TEXT_DIM, &fonts::Font0);
-        y += 14;
-        _drawCenteredText(y, "scan for RPi", COL_TEXT_DIM, &fonts::Font0);
-
-        // Draw scan icon (circle with waves)
-        y += 24;
-        c->drawCircle(CENTER_X, y + 8, 8, COL_ACCENT);
-        c->drawArc(CENTER_X, y + 8, 16, 14, 300, 60, COL_ACCENT);
-        c->drawArc(CENTER_X, y + 8, 24, 22, 310, 50, COL_ACCENT);
+        _drawCenteredText(100, "No services", COL_TEXT_DIM, &fonts::Font2);
+        _drawCenteredText(130, "configured", COL_TEXT_DIM, &fonts::Font0);
         return;
     }
 
-    // Device list
     int y = CONTENT_START_Y;
-    int maxVisible = 4;
+    int maxVisible = 5;
     c->setFont(&fonts::Font0);
 
     for (int i = 0; i < count && i < maxVisible; i++) {
-        bool selected = (i == selectedDevice);
+        auto& svc = ble.getServiceInfo(i);
+        bool selected = (i == selectedIndex);
         int rowY = y + i * 22;
 
         if (selected) {
-            // Highlight selected row
             c->fillRoundRect(TEXT_LEFT - 4, rowY - 3, TEXT_RIGHT - TEXT_LEFT + 8, 20,
                              4, COL_HIGHLIGHT);
-            c->setTextColor(COL_TEXT);
-        } else {
-            c->setTextColor(COL_TEXT_DIM);
         }
 
-        char label[48];
-        snprintf(label, sizeof(label), "%d. %s", i + 1,
-                 ble.getFoundDeviceName(i).c_str());
+        // Status indicator
+        uint16_t stColor = svc.active ? COL_GOOD : COL_BAD;
+        c->fillCircle(TEXT_LEFT + 4, rowY + 5, 4, stColor);
 
-        // Truncate if too wide
-        if (c->textWidth(label) > (TEXT_RIGHT - TEXT_LEFT)) {
-            label[20] = '.';
-            label[21] = '.';
-            label[22] = '\0';
-        }
+        // Service name
+        c->setTextColor(selected ? COL_TEXT : COL_TEXT_DIM);
+        c->setCursor(TEXT_LEFT + 14, rowY);
+        c->print(svc.name.c_str());
 
-        c->setCursor(TEXT_LEFT, rowY);
-        c->print(label);
+        // Status text (right-aligned)
+        const char* stText = svc.active ? "active" : "inactive";
+        c->setTextColor(stColor);
+        int tw = c->textWidth(stText);
+        c->setCursor(TEXT_RIGHT - tw, rowY);
+        c->print(stText);
     }
 
     // Confirm dialog
-    y = y + maxVisible * 22 + 8;
-    if (confirmMode) {
-        c->setFont(&fonts::Font0);
-
+    y = y + maxVisible * 22 + 4;
+    if (confirmMode && selectedIndex >= 0 && selectedIndex < count) {
+        auto& svc = ble.getServiceInfo(selectedIndex);
+        const char* action = svc.active ? "Stop" : "Start";
         char msg[48];
-        snprintf(msg, sizeof(msg), "Connect to #%d?", selectedDevice + 1);
+        snprintf(msg, sizeof(msg), "%s %s?", action, svc.name.c_str());
         _drawCenteredText(y, msg, COL_WARN, &fonts::Font0);
-        y += 16;
-        _drawCenteredText(y, "Rotate=Cancel  Press=OK", COL_TEXT_DIM, &fonts::Font0);
+        y += 14;
+        _drawCenteredText(y, "Tap top=Cancel  Center=OK", COL_TEXT_DIM, &fonts::Font0);
     } else {
-        _drawCenteredText(y, "Rotate=Scroll  Press=Select", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(y, "Tap top/bottom=Scroll  Center=Select", COL_TEXT_DIM, &fonts::Font0);
     }
+}
+
+// ---- Power Menu Screen ----
+
+void RpiMonitorGui::drawPowerMenu(int selectedIndex, bool confirmMode)
+{
+    _drawTitle("Power");
+
+    auto* c = _hal->canvas;
+    const char* items[] = {"Reboot", "Shutdown"};
+    uint16_t colors[] = {COL_WARN, COL_BAD};
+
+    int y = 80;
+    for (int i = 0; i < 2; i++) {
+        bool selected = (i == selectedIndex);
+        int rowY = y + i * 40;
+
+        if (selected) {
+            c->fillRoundRect(TEXT_LEFT - 4, rowY - 6, TEXT_RIGHT - TEXT_LEFT + 8, 30,
+                             6, COL_HIGHLIGHT);
+        }
+
+        c->setFont(&fonts::Font2);
+        c->setTextColor(colors[i]);
+        int tw = c->textWidth(items[i]);
+        c->setCursor((DISP_W - tw) / 2, rowY);
+        c->print(items[i]);
+    }
+
+    int msgY = 175;
+    if (confirmMode) {
+        char msg[32];
+        snprintf(msg, sizeof(msg), "%s?", items[selectedIndex]);
+        _drawCenteredText(msgY, msg, COL_BAD, &fonts::Font2);
+        msgY += 20;
+        _drawCenteredText(msgY, "Tap top=Cancel  Center=Confirm", COL_TEXT_DIM, &fonts::Font0);
+    } else {
+        _drawCenteredText(msgY, "Tap to select  Center=Confirm", COL_TEXT_DIM, &fonts::Font0);
+    }
+}
+
+// ---- Commands Screen ----
+
+void RpiMonitorGui::drawCommands(const RpiBleClient& ble, int selectedIndex, bool confirmMode)
+{
+    _drawTitle("Commands");
+
+    auto* c = _hal->canvas;
+    int count = ble.getCommandCount();
+
+    if (count == 0) {
+        _drawCenteredText(100, "No commands", COL_TEXT_DIM, &fonts::Font2);
+        _drawCenteredText(130, "configured", COL_TEXT_DIM, &fonts::Font0);
+        return;
+    }
+
+    int y = CONTENT_START_Y;
+    int maxVisible = 5;
+    c->setFont(&fonts::Font0);
+
+    for (int i = 0; i < count && i < maxVisible; i++) {
+        auto& cmd = ble.getCommandInfo(i);
+        bool selected = (i == selectedIndex);
+        int rowY = y + i * 22;
+
+        if (selected) {
+            c->fillRoundRect(TEXT_LEFT - 4, rowY - 3, TEXT_RIGHT - TEXT_LEFT + 8, 20,
+                             4, COL_HIGHLIGHT);
+        }
+
+        // Command name
+        c->setTextColor(selected ? COL_TEXT : COL_TEXT_DIM);
+        c->setCursor(TEXT_LEFT, rowY);
+        c->print(cmd.name.c_str());
+
+        // State (right-aligned)
+        uint16_t stColor = COL_TEXT_DIM;
+        if (cmd.state == "running") stColor = COL_WARN;
+        else if (cmd.state == "done") stColor = COL_GOOD;
+        else if (cmd.state == "error") stColor = COL_BAD;
+
+        c->setTextColor(stColor);
+        int tw = c->textWidth(cmd.state.c_str());
+        c->setCursor(TEXT_RIGHT - tw, rowY);
+        c->print(cmd.state.c_str());
+    }
+
+    // Confirm dialog
+    y = y + maxVisible * 22 + 4;
+    if (confirmMode && selectedIndex >= 0 && selectedIndex < count) {
+        auto& cmd = ble.getCommandInfo(selectedIndex);
+        const char* action = (cmd.state == "running") ? "Stop" : "Run";
+        char msg[48];
+        snprintf(msg, sizeof(msg), "%s '%s'?", action, cmd.name.c_str());
+        _drawCenteredText(y, msg, COL_WARN, &fonts::Font0);
+        y += 14;
+        _drawCenteredText(y, "Tap top=Cancel  Center=OK", COL_TEXT_DIM, &fonts::Font0);
+    } else {
+        _drawCenteredText(y, "Tap top/bottom=Scroll  Center=Run", COL_TEXT_DIM, &fonts::Font0);
+    }
+}
+
+// ---- ROS2 Screen ----
+
+void RpiMonitorGui::drawRos2(const RpiBleClient& ble, int tab, int scrollOffset)
+{
+    _drawTitle("ROS2");
+
+    auto* c = _hal->canvas;
+    auto& ros2 = ble.getRos2Info();
+
+    if (!ros2.active) {
+        _drawCenteredText(100, "ROS2 not detected", COL_TEXT_DIM, &fonts::Font2);
+        _drawCenteredText(130, "on this host", COL_TEXT_DIM, &fonts::Font0);
+        return;
+    }
+
+    // Tab indicator bar
+    int tabY = CONTENT_START_Y - 2;
+    int tabW = 80;
+    int tabGap = 10;
+    int tabStartX = (DISP_W - tabW * 2 - tabGap) / 2;
+
+    const char* tabLabels[] = {"Nodes", "Topics"};
+    for (int i = 0; i < 2; i++) {
+        int tx = tabStartX + i * (tabW + tabGap);
+        bool active = (i == tab);
+
+        if (active) {
+            c->fillRoundRect(tx, tabY, tabW, 16, 4, COL_ACCENT);
+            c->setTextColor(COL_BG);
+        } else {
+            c->drawRoundRect(tx, tabY, tabW, 16, 4, COL_TEXT_DIM);
+            c->setTextColor(COL_TEXT_DIM);
+        }
+        c->setFont(&fonts::Font0);
+        int lw = c->textWidth(tabLabels[i]);
+        c->setCursor(tx + (tabW - lw) / 2, tabY + 3);
+        c->print(tabLabels[i]);
+    }
+
+    // Count label
+    int countY = tabY + 20;
+    char countBuf[32];
+    const std::vector<std::string>& items = (tab == 0) ? ros2.nodes : ros2.topics;
+    int total = (tab == 0) ? ros2.nodeTotal : ros2.topicTotal;
+    int shown = (int)items.size();
+    snprintf(countBuf, sizeof(countBuf), "%d/%d %s",
+             shown, total, (tab == 0) ? "nodes" : "topics");
+    c->setFont(&fonts::Font0);
+    c->setTextColor(COL_TEXT_DIM);
+    int cw = c->textWidth(countBuf);
+    c->setCursor((DISP_W - cw) / 2, countY);
+    c->print(countBuf);
+
+    // Scrollable list
+    int listY = countY + 16;
+    int lineH = 14;
+    int maxVisible = 7;
+    int itemCount = (int)items.size();
+
+    // Clamp scrollOffset
+    if (scrollOffset > itemCount - maxVisible) {
+        scrollOffset = itemCount - maxVisible;
+    }
+    if (scrollOffset < 0) scrollOffset = 0;
+
+    c->setFont(&fonts::Font0);
+    for (int i = 0; i < maxVisible && (scrollOffset + i) < itemCount; i++) {
+        int idx = scrollOffset + i;
+        int rowY = listY + i * lineH;
+
+        c->setTextColor(COL_TEXT);
+
+        // Truncate long names to fit display
+        const std::string& name = items[idx];
+        const char* nameStr = name.c_str();
+        int maxTextW = TEXT_RIGHT - TEXT_LEFT;
+
+        if (c->textWidth(nameStr) > maxTextW) {
+            // Truncate with ellipsis
+            char truncBuf[64];
+            int len = (int)name.length();
+            if (len > 60) len = 60;
+            strncpy(truncBuf, nameStr, len);
+            truncBuf[len] = '\0';
+            while (len > 3 && c->textWidth(truncBuf) > maxTextW) {
+                len--;
+                truncBuf[len] = '\0';
+            }
+            if (len > 3) {
+                truncBuf[len - 1] = '.';
+                truncBuf[len - 2] = '.';
+            }
+            c->setCursor(TEXT_LEFT, rowY);
+            c->print(truncBuf);
+        } else {
+            c->setCursor(TEXT_LEFT, rowY);
+            c->print(nameStr);
+        }
+    }
+
+    // Scroll indicators
+    if (scrollOffset > 0) {
+        c->fillTriangle(CENTER_X - 5, listY - 8, CENTER_X + 5, listY - 8,
+                        CENTER_X, listY - 12, COL_ACCENT);
+    }
+    if (scrollOffset + maxVisible < itemCount) {
+        int bottomY = listY + maxVisible * lineH + 2;
+        c->fillTriangle(CENTER_X - 5, bottomY, CENTER_X + 5, bottomY,
+                        CENTER_X, bottomY + 4, COL_ACCENT);
+    }
+}
+
+// ---- QR Code Screen ----
+
+#include <lgfx/utility/lgfx_qrcode.h>
+
+void RpiMonitorGui::drawQrCode(const RpiBleClient& ble)
+{
+    _drawTitle("QR Code");
+
+    auto* c = _hal->canvas;
+    auto& net = ble.getNetworkInfo();
+
+    if (net.ip.empty() || net.ip == "0.0.0.0") {
+        _drawCenteredText(110, "IP not available", COL_TEXT_DIM, &fonts::Font2);
+        return;
+    }
+
+    // Generate QR code for http://<ip>:5000
+    char url[64];
+    snprintf(url, sizeof(url), "http://%s:5000", net.ip.c_str());
+
+    // QR version 3 = 29 modules
+    uint8_t qrcodeData[lgfx_qrcode_getBufferSize(3)];
+    QRCode qrcode;
+    int8_t err = lgfx_qrcode_initText(&qrcode, qrcodeData, 3, 0, url);  // ECC_LOW=0
+    if (err != 0) {
+        _drawCenteredText(110, "QR Error", COL_BAD, &fonts::Font2);
+        return;
+    }
+
+    // Draw QR code centered
+    int moduleSize = 3;
+    int qrSize = qrcode.size * moduleSize;
+    int qrX = (DISP_W - qrSize) / 2;
+    int qrY = 50;
+
+    // White background
+    c->fillRect(qrX - 4, qrY - 4, qrSize + 8, qrSize + 8, COL_TEXT);
+
+    for (uint8_t y = 0; y < qrcode.size; y++) {
+        for (uint8_t x = 0; x < qrcode.size; x++) {
+            if (lgfx_qrcode_getModule(&qrcode, x, y)) {
+                c->fillRect(qrX + x * moduleSize, qrY + y * moduleSize,
+                            moduleSize, moduleSize, COL_BG);
+            }
+        }
+    }
+
+    // URL label below
+    int labelY = qrY + qrSize + 10;
+    char label[48];
+    snprintf(label, sizeof(label), "Monitor :5000");
+    _drawCenteredText(labelY, label, COL_ACCENT, &fonts::Font0);
+
+    labelY += 14;
+    _drawCenteredText(labelY, net.ip.c_str(), COL_TEXT_DIM, &fonts::Font0);
+}
+
+// ---- Settings Screen ----
+
+void RpiMonitorGui::drawSettings(bool soundEnabled)
+{
+    _drawTitle("Settings");
+
+    auto* c = _hal->canvas;
+    int y = CONTENT_START_Y + 10;
+
+    // Sound toggle
+    _drawKeyValue(y, "Sound:", soundEnabled ? "ON" : "OFF",
+                  soundEnabled ? COL_GOOD : COL_BAD);
+
+    y += 30;
+    _drawCenteredText(y, "Tap center to toggle", COL_TEXT_DIM, &fonts::Font0);
+
+    // Alert thresholds (info display)
+    y += 30;
+    c->setFont(&fonts::Font0);
+    c->setTextColor(COL_TEXT_DIM);
+    int tw = c->textWidth("-- Alert Thresholds --");
+    c->setCursor((DISP_W - tw) / 2, y);
+    c->print("-- Alert Thresholds --");
+
+    y += 16;
+    _drawKeyValue(y, "CPU:", "90%", COL_TEXT);
+    y += 14;
+    _drawKeyValue(y, "Temp:", "80 C", COL_TEXT);
+    y += 14;
+    _drawKeyValue(y, "RAM:", "90%", COL_TEXT);
+    y += 14;
+    _drawKeyValue(y, "Disk:", "95%", COL_TEXT);
 }
 
 // ---- Disconnected Overlay ----
@@ -514,11 +775,11 @@ void RpiMonitorGui::drawDisconnectedOverlay(bool hasSavedServer, const char* ser
         dots[dotCount] = '\0';
         _drawCenteredText(120, dots, COL_ACCENT, &fonts::Font2);
 
-        _drawCenteredText(145, "Press to cancel", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(145, "Tap to cancel", COL_TEXT_DIM, &fonts::Font0);
     } else {
         _drawCenteredText(80, "Disconnected", COL_TEXT_DIM, &fonts::Font2);
-        _drawCenteredText(110, "Go to Register", COL_TEXT_DIM, &fonts::Font0);
-        _drawCenteredText(124, "screen to connect", COL_TEXT_DIM, &fonts::Font0);
-        _drawCenteredText(150, "Rotate encoder", COL_ACCENT, &fonts::Font0);
+        _drawCenteredText(110, "Use BLE Scanner app", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(124, "to pair a device", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(150, "Button = Exit", COL_ACCENT, &fonts::Font0);
     }
 }

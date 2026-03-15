@@ -318,6 +318,76 @@ def system_control(action: str) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def get_ros2_info(setup_script: str = "/opt/ros/humble/setup.bash") -> dict:
+    """Get ROS2 node and topic information.
+
+    Runs ``ros2 node list`` and ``ros2 topic list`` in a shell that sources
+    the given *setup_script*.  Returns a dict with truncated lists (max 10
+    entries each) and total counts, kept under 512 bytes when JSON-encoded.
+    """
+    empty: dict = {
+        "nodes": [],
+        "topics": [],
+        "n_total": 0,
+        "t_total": 0,
+        "active": False,
+    }
+
+    if not os.path.isfile(setup_script):
+        return empty
+
+    def _run_ros2_cmd(cmd: str) -> list[str]:
+        try:
+            result = subprocess.run(
+                ["bash", "-c", f"source {setup_script} && {cmd}"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode != 0:
+                return []
+            return [
+                line.strip()
+                for line in result.stdout.strip().splitlines()
+                if line.strip()
+            ]
+        except Exception:
+            return []
+
+    nodes = _run_ros2_cmd("ros2 node list")
+    topics = _run_ros2_cmd("ros2 topic list")
+
+    if not nodes and not topics:
+        return empty
+
+    n_total = len(nodes)
+    t_total = len(topics)
+
+    # Truncate to max 10 each, then verify total JSON stays under 512 bytes
+    max_items = 10
+    nodes = nodes[:max_items]
+    topics = topics[:max_items]
+
+    info: dict = {
+        "nodes": nodes,
+        "topics": topics,
+        "n_total": n_total,
+        "t_total": t_total,
+        "active": True,
+    }
+
+    # Shrink lists until JSON fits in 512 bytes
+    while len(json.dumps(info)) > 512 and (nodes or topics):
+        if len(topics) >= len(nodes):
+            topics.pop()
+        else:
+            nodes.pop()
+        info["nodes"] = nodes
+        info["topics"] = topics
+
+    return info
+
+
 class CommandRunner:
     """Manages background command execution with status tracking."""
 

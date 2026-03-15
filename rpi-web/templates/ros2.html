@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPi Monitor - ROS2</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 30px;
+        }
+        header h1 {
+            color: #00d4ff;
+            font-size: 1.8em;
+            margin-bottom: 8px;
+        }
+        header p {
+            color: #888;
+            font-size: 0.9em;
+        }
+        nav {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        nav a {
+            color: #00d4ff;
+            text-decoration: none;
+            margin: 0 12px;
+            padding: 6px 16px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        nav a:hover, nav a.active {
+            background: #0f3460;
+        }
+        .section {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            color: #00d4ff;
+            font-size: 1.2em;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .section h2 .count {
+            font-size: 0.75em;
+            color: #888;
+            font-weight: normal;
+        }
+        .item-list {
+            list-style: none;
+        }
+        .item-list li {
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 10px 14px;
+            margin-bottom: 6px;
+            font-family: monospace;
+            font-size: 0.9em;
+            color: #e0e0e0;
+        }
+        .item-list li:last-child {
+            margin-bottom: 0;
+        }
+        .not-detected {
+            text-align: center;
+            padding: 40px 20px;
+            color: #888;
+        }
+        .not-detected h2 {
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .not-detected p {
+            font-size: 0.9em;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-active { background: #4caf50; }
+        .status-inactive { background: #666; }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RPi Monitor</h1>
+            <p>ROS2 Monitoring</p>
+        </header>
+
+        <nav>
+            <a href="/">Devices</a>
+            <a href="/flash">Flash</a>
+            <a href="/deploy">Deploy</a>
+            <a href="/commands">Commands</a>
+            <a href="/ros2" class="active">ROS2</a>
+            <a href="/settings">Settings</a>
+        </nav>
+
+        <div id="content">
+            <div class="loading">Loading ROS2 status...</div>
+        </div>
+    </div>
+
+    <script>
+        const contentEl = document.getElementById('content');
+
+        function renderData(data) {
+            if (!data.active) {
+                contentEl.innerHTML = `
+                    <div class="not-detected">
+                        <h2>ROS2 Not Detected</h2>
+                        <p>ROS2 is not installed or no nodes/topics are running.</p>
+                    </div>`;
+                return;
+            }
+
+            const nodesHtml = data.nodes.length > 0
+                ? `<ul class="item-list">${data.nodes.map(n => `<li><span class="status-indicator status-active"></span>${escapeHtml(n)}</li>`).join('')}</ul>`
+                : '<p style="color:#888; padding:8px 0;">No running nodes</p>';
+
+            const topicsHtml = data.topics.length > 0
+                ? `<ul class="item-list">${data.topics.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>`
+                : '<p style="color:#888; padding:8px 0;">No active topics</p>';
+
+            const nodesCount = data.nodes.length < data.n_total
+                ? `Showing ${data.nodes.length} of ${data.n_total} nodes`
+                : `${data.n_total} node${data.n_total !== 1 ? 's' : ''}`;
+
+            const topicsCount = data.topics.length < data.t_total
+                ? `Showing ${data.topics.length} of ${data.t_total} topics`
+                : `${data.t_total} topic${data.t_total !== 1 ? 's' : ''}`;
+
+            contentEl.innerHTML = `
+                <div class="section">
+                    <h2>Running Nodes <span class="count">${nodesCount}</span></h2>
+                    ${nodesHtml}
+                </div>
+                <div class="section">
+                    <h2>Active Topics <span class="count">${topicsCount}</span></h2>
+                    ${topicsHtml}
+                </div>`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function fetchRos2() {
+            try {
+                const resp = await fetch('/api/ros2');
+                if (!resp.ok) throw new Error('API error');
+                const data = await resp.json();
+                renderData(data);
+            } catch (e) {
+                contentEl.innerHTML = `
+                    <div class="not-detected">
+                        <h2>Connection Error</h2>
+                        <p>Failed to fetch ROS2 status.</p>
+                    </div>`;
+            }
+        }
+
+        // Initial fetch and auto-refresh every 3 seconds
+        fetchRos2();
+        setInterval(fetchRos2, 3000);
+    </script>
+</body>
+</html>

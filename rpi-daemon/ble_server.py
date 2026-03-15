@@ -17,6 +17,7 @@ from system_info import (
     detect_platform,
     get_cpu_info,
     get_memory_info,
+    get_ros2_info,
     get_services_info,
     get_storage_info,
     get_network_info,
@@ -38,6 +39,7 @@ CHAR_REGISTRATION_UUID = "12345678-1234-5678-1234-56789abcdef6"
 CHAR_SERVICES_UUID = "12345678-1234-5678-1234-56789abcdef7"
 CHAR_SYSTEM_CTRL_UUID = "12345678-1234-5678-1234-56789abcdef8"
 CHAR_COMMANDS_UUID = "12345678-1234-5678-1234-56789abcdef9"
+CHAR_ROS2_UUID = "12345678-1234-5678-1234-56789abcdefa"
 
 BLUEZ_SERVICE = "org.bluez"
 LE_ADVERTISING_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
@@ -301,6 +303,22 @@ class CommandsCharacteristic(Characteristic):
             self.set_value(json.dumps({"status": "error", "message": str(e)}))
 
 
+class Ros2Characteristic(Characteristic):
+    """BLE characteristic for ROS2 node/topic monitoring."""
+
+    def __init__(self, path: str, setup_script: str = "/opt/ros/humble/setup.bash"):
+        super().__init__(CHAR_ROS2_UUID, ["read", "notify"], path)
+        self._setup_script = setup_script
+
+    def update(self):
+        self.set_value(json.dumps(get_ros2_info(self._setup_script)))
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        self.update()
+        return bytes(self._value)
+
+
 class GattService(ServiceInterface):
     """GATT Service definition."""
 
@@ -370,6 +388,10 @@ class BLEServer:
         sysctrl_char = SystemControlCharacteristic(f"{service_path}/char7")
         cmd_char = CommandsCharacteristic(f"{service_path}/char8", cmd_runner)
 
+        # ROS2 monitoring (setup script path from config, default: /opt/ros/humble/setup.bash)
+        ros2_setup = config.get("ros2_setup_script", "/opt/ros/humble/setup.bash")
+        ros2_char = Ros2Characteristic(f"{service_path}/char9", ros2_setup)
+
         self.characteristics = [
             cpu_char,
             mem_char,
@@ -380,6 +402,7 @@ class BLEServer:
             svc_char,
             sysctrl_char,
             cmd_char,
+            ros2_char,
         ]
 
         # Export objects on D-Bus

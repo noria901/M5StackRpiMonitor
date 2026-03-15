@@ -14,12 +14,14 @@
 #define RPI_CHAR_REGISTRATION_UUID "12345678-1234-5678-1234-56789abcdef6"
 #define RPI_CHAR_SERVICES_UUID     "12345678-1234-5678-1234-56789abcdef7"
 #define RPI_CHAR_SYSTEM_CTRL_UUID  "12345678-1234-5678-1234-56789abcdef8"
+#define RPI_CHAR_COMMANDS_UUID     "12345678-1234-5678-1234-56789abcdef9"
+#define RPI_CHAR_ROS2_UUID         "12345678-1234-5678-1234-56789abcdefa"
 
 // BLE scan duration
 #define RPI_BLE_SCAN_DURATION_SEC  5
 
 // Number of characteristics
-#define RPI_CHAR_COUNT             8
+#define RPI_CHAR_COUNT             10
 
 // Characteristic handle indices
 #define RPI_CHAR_IDX_CPU           0
@@ -30,6 +32,8 @@
 #define RPI_CHAR_IDX_REGISTRATION  5
 #define RPI_CHAR_IDX_SERVICES      6
 #define RPI_CHAR_IDX_SYSTEM_CTRL   7
+#define RPI_CHAR_IDX_COMMANDS      8
+#define RPI_CHAR_IDX_ROS2          9
 
 enum class BleState {
     DISCONNECTED,
@@ -75,6 +79,25 @@ struct RpiSystemInfo {
     std::string platform;
 };
 
+struct RpiServiceInfo {
+    std::string name;
+    bool active = false;
+};
+
+struct RpiCommandInfo {
+    std::string name;
+    std::string state = "idle";  // idle, running, done, error
+    int exitCode = -1;
+};
+
+struct RpiRos2Info {
+    std::vector<std::string> nodes;
+    std::vector<std::string> topics;
+    int nodeTotal = 0;
+    int topicTotal = 0;
+    bool active = false;
+};
+
 struct FoundDevice {
     std::string name;
     uint8_t addrType;
@@ -102,6 +125,8 @@ public:
     bool readAll();
     bool sendRegistration(const char* deviceName);
     bool sendPowerCommand(const char* action);
+    bool sendServiceControl(const char* serviceName, const char* action);
+    bool sendCommand(const char* name, const char* action);
 
     int getFoundDeviceCount() const { return (int)_foundDevices.size(); }
     std::string getFoundDeviceName(int index) const;
@@ -111,6 +136,12 @@ public:
     const RpiStorageInfo& getStorageInfo() const { return _storageInfo; }
     const RpiNetworkInfo& getNetworkInfo() const { return _netInfo; }
     const RpiSystemInfo& getSystemInfo() const { return _sysInfo; }
+
+    int getServiceCount() const { return (int)_services.size(); }
+    const RpiServiceInfo& getServiceInfo(int index) const;
+    int getCommandCount() const { return (int)_commands.size(); }
+    const RpiCommandInfo& getCommandInfo(int index) const;
+    const RpiRos2Info& getRos2Info() const { return _ros2Info; }
 
     // NimBLE callbacks (called from static C functions)
     void onGapEvent(int event, void* arg);
@@ -133,6 +164,9 @@ private:
     RpiStorageInfo _storageInfo;
     RpiNetworkInfo _netInfo;
     RpiSystemInfo _sysInfo;
+    std::vector<RpiServiceInfo> _services;
+    std::vector<RpiCommandInfo> _commands;
+    RpiRos2Info _ros2Info;
 
     // Scan results
     std::vector<FoundDevice> _foundDevices;
@@ -164,6 +198,9 @@ private:
     void _parseStorageInfo(const char* json);
     void _parseNetworkInfo(const char* json);
     void _parseSystemInfo(const char* json);
+    void _parseServicesInfo(const char* json);
+    void _parseCommandsInfo(const char* json);
+    void _parseRos2Info(const char* json);
 
     // GATT operations
     bool _readCharacteristic(int charIdx, char* outBuf, size_t bufSize);
