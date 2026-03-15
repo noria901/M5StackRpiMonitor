@@ -15,12 +15,13 @@
 #define RPI_CHAR_SERVICES_UUID     "12345678-1234-5678-1234-56789abcdef7"
 #define RPI_CHAR_SYSTEM_CTRL_UUID  "12345678-1234-5678-1234-56789abcdef8"
 #define RPI_CHAR_COMMANDS_UUID     "12345678-1234-5678-1234-56789abcdef9"
+#define RPI_CHAR_ROS2_UUID         "12345678-1234-5678-1234-56789abcdefa"
 
 // BLE scan duration
 #define RPI_BLE_SCAN_DURATION_SEC  5
 
 // Number of characteristics
-#define RPI_CHAR_COUNT             9
+#define RPI_CHAR_COUNT             10
 
 // Characteristic handle indices
 #define RPI_CHAR_IDX_CPU           0
@@ -32,6 +33,7 @@
 #define RPI_CHAR_IDX_SERVICES      6
 #define RPI_CHAR_IDX_SYSTEM_CTRL   7
 #define RPI_CHAR_IDX_COMMANDS      8
+#define RPI_CHAR_IDX_ROS2          9
 
 enum class BleState {
     DISCONNECTED,
@@ -88,6 +90,14 @@ struct RpiCommandInfo {
     int exitCode = -1;
 };
 
+struct RpiRos2Info {
+    std::vector<std::string> nodes;
+    std::vector<std::string> topics;
+    int nodeTotal = 0;
+    int topicTotal = 0;
+    bool active = false;
+};
+
 struct FoundDevice {
     std::string name;
     uint8_t addrType;
@@ -131,6 +141,7 @@ public:
     const RpiServiceInfo& getServiceInfo(int index) const;
     int getCommandCount() const { return (int)_commands.size(); }
     const RpiCommandInfo& getCommandInfo(int index) const;
+    const RpiRos2Info& getRos2Info() const { return _ros2Info; }
 
     // NimBLE callbacks (called from static C functions)
     void onGapEvent(int event, void* arg);
@@ -155,6 +166,7 @@ private:
     RpiSystemInfo _sysInfo;
     std::vector<RpiServiceInfo> _services;
     std::vector<RpiCommandInfo> _commands;
+    RpiRos2Info _ros2Info;
 
     // Scan results
     std::vector<FoundDevice> _foundDevices;
@@ -188,6 +200,7 @@ private:
     void _parseSystemInfo(const char* json);
     void _parseServicesInfo(const char* json);
     void _parseCommandsInfo(const char* json);
+    void _parseRos2Info(const char* json);
 
     // GATT operations
     bool _readCharacteristic(int charIdx, char* outBuf, size_t bufSize);

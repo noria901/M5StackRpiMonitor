@@ -85,6 +85,7 @@ void UI::nextScreen() {
     svcConfirmMode = false;
     pwrConfirmMode = false;
     cmdConfirmMode = false;
+    ros2ScrollOffset = 0;
 }
 
 void UI::prevScreen() {
@@ -95,6 +96,7 @@ void UI::prevScreen() {
     svcConfirmMode = false;
     pwrConfirmMode = false;
     cmdConfirmMode = false;
+    ros2ScrollOffset = 0;
 }
 
 void UI::servicesBtnA() {
@@ -158,6 +160,25 @@ void UI::commandsBtnC(int commandCount) {
     } else if (!cmdConfirmMode) {
         nextScreen();
     }
+}
+
+void UI::ros2BtnA() {
+    // Scroll up or switch tab
+    if (ros2ScrollOffset > 0) {
+        ros2ScrollOffset--;
+        needsFullRedraw = true;
+    } else {
+        // Switch tab when at top
+        ros2SelectedTab = (ros2SelectedTab == 0) ? 1 : 0;
+        ros2ScrollOffset = 0;
+        needsFullRedraw = true;
+    }
+}
+
+void UI::ros2BtnC() {
+    // Scroll down (actual max checked against list size in drawRos2)
+    ros2ScrollOffset++;
+    needsFullRedraw = true;
 }
 
 void UI::buttonAction(BLEMonitorClient& ble) {
@@ -306,6 +327,7 @@ void UI::update(BLEMonitorClient& ble) {
             case Screen::SERVICES:      drawServices(ble); break;
             case Screen::POWER_MENU:    drawPowerMenu(ble); break;
             case Screen::COMMANDS:      drawCommands(ble); break;
+            case Screen::ROS2:          drawRos2(ble); break;
             case Screen::QR_CODE:       drawQrCodeScreen(ble); break;
             case Screen::SETTINGS:      drawSettings(); break;
             case Screen::REGISTRATION:  drawRegistration(ble); break;
@@ -364,7 +386,7 @@ void UI::drawFooter() {
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
 
     const char* screenNames[] = {
-        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "Services", "Power", "Commands", "QR", "Settings", "Register"
+        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "Services", "Power", "Commands", "ROS2", "QR", "Settings", "Register"
     };
     int idx = (int)currentScreen;
 
@@ -913,6 +935,98 @@ void UI::drawCommands(BLEMonitorClient& ble) {
         M5.Lcd.setCursor(10, y);
         M5.Lcd.print("[<] Up/Prev  [Sel] Run/Stop  [>] Down/Next");
     }
+}
+
+// === ROS2 Screen ===
+void UI::drawRos2(BLEMonitorClient& ble) {
+    drawScreenTitle("ROS2");
+    int y = HEADER_HEIGHT + 36;
+
+    auto ros2 = ble.getRos2Info();
+
+    if (!ros2.active) {
+        M5.Lcd.setTextSize(1);
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(60, 100);
+        M5.Lcd.print("ROS2 not detected");
+        return;
+    }
+
+    // Tab bar
+    M5.Lcd.setTextSize(1);
+    int tabW = 150;
+    // Nodes tab
+    if (ros2SelectedTab == 0) {
+        M5.Lcd.fillRect(10, y - 2, tabW, 14, COLOR_ACCENT);
+        M5.Lcd.setTextColor(COLOR_BG);
+    } else {
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+    }
+    char tabBuf[32];
+    snprintf(tabBuf, sizeof(tabBuf), "Nodes (%d)", ros2.nodeTotal);
+    M5.Lcd.setCursor(12, y);
+    M5.Lcd.print(tabBuf);
+
+    // Topics tab
+    if (ros2SelectedTab == 1) {
+        M5.Lcd.fillRect(10 + tabW + 4, y - 2, tabW, 14, COLOR_ACCENT);
+        M5.Lcd.setTextColor(COLOR_BG);
+    } else {
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+    }
+    snprintf(tabBuf, sizeof(tabBuf), "Topics (%d)", ros2.topicTotal);
+    M5.Lcd.setCursor(12 + tabW + 4, y);
+    M5.Lcd.print(tabBuf);
+
+    y += 20;
+
+    // List content
+    const std::vector<String>& items = (ros2SelectedTab == 0) ? ros2.nodes : ros2.topics;
+    int count = items.size();
+    int maxVisible = 7;
+
+    // Clamp scroll offset
+    if (ros2ScrollOffset > count - maxVisible) {
+        ros2ScrollOffset = (count > maxVisible) ? count - maxVisible : 0;
+    }
+    if (ros2ScrollOffset < 0) ros2ScrollOffset = 0;
+
+    if (count == 0) {
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print(ros2SelectedTab == 0 ? "No nodes found" : "No topics found");
+    } else {
+        M5.Lcd.setTextSize(1);
+        for (int i = ros2ScrollOffset; i < count && i < ros2ScrollOffset + maxVisible; i++) {
+            M5.Lcd.setTextColor(COLOR_TEXT);
+            M5.Lcd.setCursor(12, y);
+            // Truncate long names to fit screen
+            String name = items[i];
+            if (name.length() > 48) {
+                name = name.substring(0, 45) + "...";
+            }
+            M5.Lcd.print(name.c_str());
+            y += 16;
+        }
+
+        // Scroll indicators
+        if (ros2ScrollOffset > 0) {
+            M5.Lcd.setTextColor(COLOR_ACCENT);
+            M5.Lcd.setCursor(300, HEADER_HEIGHT + 56);
+            M5.Lcd.print("^");
+        }
+        if (ros2ScrollOffset + maxVisible < count) {
+            M5.Lcd.setTextColor(COLOR_ACCENT);
+            M5.Lcd.setCursor(300, SCREEN_HEIGHT - FOOTER_HEIGHT - 16);
+            M5.Lcd.print("v");
+        }
+    }
+
+    // Footer hint
+    y = SCREEN_HEIGHT - FOOTER_HEIGHT - 12;
+    M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+    M5.Lcd.setCursor(10, y);
+    M5.Lcd.print("[<] Up/Tab  [Sel] Refresh  [>] Down");
 }
 
 // === Registration Screen ===

@@ -37,6 +37,7 @@ private:
         SERVICES,
         POWER_MENU,
         COMMANDS,
+        ROS2,
         QR_CODE,
         SETTINGS,
         SCREEN_COUNT
@@ -55,6 +56,10 @@ private:
     // Commands screen state
     int _cmdSelectedIndex = 0;
     bool _cmdConfirmMode = false;
+
+    // ROS2 screen state
+    int _ros2Tab = 0;           // 0=Nodes, 1=Topics
+    int _ros2ScrollOffset = 0;
 
     // Settings state
     bool _soundEnabled = true;

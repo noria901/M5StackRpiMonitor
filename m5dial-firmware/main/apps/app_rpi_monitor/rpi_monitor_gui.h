@@ -20,6 +20,7 @@ public:
     void drawCommands(const RpiBleClient& ble, int selectedIndex, bool confirmMode);
     void drawQrCode(const RpiBleClient& ble);
     void drawSettings(bool soundEnabled);
+    void drawRos2(const RpiBleClient& ble, int tab, int scrollOffset);
 
     // Overlay
     void drawDisconnectedOverlay(bool hasSavedServer, const char* serverName);

@@ -67,6 +67,10 @@ static const ble_uuid128_t kCharUuids[RPI_CHAR_COUNT] = {
         0xf9, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
         0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12
     ),
+    BLE_UUID128_INIT(  // ROS2 (defa)
+        0xfa, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
+        0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12
+    ),
 };
 
 // ---- NimBLE C Callbacks ----
@@ -470,6 +474,9 @@ bool RpiBleClient::readAll()
     }
     if (_readCharacteristic(RPI_CHAR_IDX_COMMANDS, buf, sizeof(buf))) {
         _parseCommandsInfo(buf);
+    }
+    if (_readCharacteristic(RPI_CHAR_IDX_ROS2, buf, sizeof(buf))) {
+        _parseRos2Info(buf);
     }
 
     return true;
@@ -882,6 +889,48 @@ void RpiBleClient::_parseCommandsInfo(const char* json)
         item = cJSON_GetObjectItem(obj, "exit_code");
         if (item) ci.exitCode = (int)cJSON_GetNumberValue(item);
         _commands.push_back(ci);
+    }
+
+    cJSON_Delete(root);
+}
+
+void RpiBleClient::_parseRos2Info(const char* json)
+{
+    cJSON* root = cJSON_Parse(json);
+    if (!root) return;
+
+    cJSON* item;
+    item = cJSON_GetObjectItem(root, "active");
+    _ros2Info.active = item ? cJSON_IsTrue(item) : false;
+
+    item = cJSON_GetObjectItem(root, "node_total");
+    _ros2Info.nodeTotal = item ? (int)cJSON_GetNumberValue(item) : 0;
+
+    item = cJSON_GetObjectItem(root, "topic_total");
+    _ros2Info.topicTotal = item ? (int)cJSON_GetNumberValue(item) : 0;
+
+    _ros2Info.nodes.clear();
+    cJSON* nodes = cJSON_GetObjectItem(root, "nodes");
+    if (nodes && cJSON_IsArray(nodes)) {
+        int count = cJSON_GetArraySize(nodes);
+        for (int i = 0; i < count; i++) {
+            cJSON* el = cJSON_GetArrayItem(nodes, i);
+            if (el && cJSON_IsString(el)) {
+                _ros2Info.nodes.push_back(el->valuestring);
+            }
+        }
+    }
+
+    _ros2Info.topics.clear();
+    cJSON* topics = cJSON_GetObjectItem(root, "topics");
+    if (topics && cJSON_IsArray(topics)) {
+        int count = cJSON_GetArraySize(topics);
+        for (int i = 0; i < count; i++) {
+            cJSON* el = cJSON_GetArrayItem(topics, i);
+            if (el && cJSON_IsString(el)) {
+                _ros2Info.topics.push_back(el->valuestring);
+            }
+        }
     }
 
     cJSON_Delete(root);

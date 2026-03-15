@@ -172,6 +172,9 @@ bool BLEMonitorClient::readAll() {
     if (readCharacteristic(CHAR_COMMANDS_UUID, data)) {
         parseCommandsInfo(data);
     }
+    if (readCharacteristic(CHAR_ROS2_UUID, data)) {
+        parseRos2Info(data);
+    }
 
     lastDataMillis = millis();
     return true;
@@ -275,6 +278,31 @@ void BLEMonitorClient::parseCommandsInfo(const String& json) {
     }
 }
 
+void BLEMonitorClient::parseRos2Info(const String& json) {
+    JsonDocument doc;
+    if (deserializeJson(doc, json) == DeserializationError::Ok) {
+        ros2Info.active = doc["active"] | false;
+        ros2Info.nodeTotal = doc["n_total"] | 0;
+        ros2Info.topicTotal = doc["t_total"] | 0;
+
+        ros2Info.nodes.clear();
+        if (doc.containsKey("nodes")) {
+            JsonArray nodesArr = doc["nodes"].as<JsonArray>();
+            for (JsonVariant v : nodesArr) {
+                ros2Info.nodes.push_back(String(v.as<const char*>()));
+            }
+        }
+
+        ros2Info.topics.clear();
+        if (doc.containsKey("topics")) {
+            JsonArray topicsArr = doc["topics"].as<JsonArray>();
+            for (JsonVariant v : topicsArr) {
+                ros2Info.topics.push_back(String(v.as<const char*>()));
+            }
+        }
+    }
+}
+
 bool BLEMonitorClient::writeCharacteristic(const char* uuid, const String& data) {
     if (!isConnected() || !pService) return false;
     BLERemoteCharacteristic* pChar = pService->getCharacteristic(BLEUUID(uuid));
@@ -331,6 +359,7 @@ CommandInfo BLEMonitorClient::getCommandInfo(int index) {
     return commands[index];
 }
 
+Ros2Info BLEMonitorClient::getRos2Info() { return ros2Info; }
 String BLEMonitorClient::getServerName() { return serverName; }
 unsigned long BLEMonitorClient::getLastDataMillis() { return lastDataMillis; }
 int BLEMonitorClient::getFoundDeviceCount() { return foundDevices.size(); }
