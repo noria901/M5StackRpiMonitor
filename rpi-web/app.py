@@ -188,6 +188,25 @@ def _check_idf_version(idf_dir: str) -> bool:
     return installed.startswith(required)
 
 
+def _clean_env_for_idf() -> dict:
+    """Return a copy of os.environ without virtualenv vars.
+
+    ESP-IDF install.sh refuses to run inside a virtualenv, and export.sh
+    may behave unexpectedly.  Strip the vars so subprocesses see a clean
+    environment.
+    """
+    env = os.environ.copy()
+    env.pop("VIRTUAL_ENV", None)
+    env.pop("VIRTUAL_ENV_PROMPT", None)
+    # Remove the venv's bin/ from PATH so the system Python is found
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        venv_bin = os.path.join(venv, "bin")
+        paths = env.get("PATH", "").split(os.pathsep)
+        env["PATH"] = os.pathsep.join(p for p in paths if p != venv_bin)
+    return env
+
+
 def _install_idf(log_fn) -> bool:
     """Download and install ESP-IDF. Returns True on success."""
     import shutil
@@ -219,12 +238,25 @@ def _install_idf(log_fn) -> bool:
         log_fn(f"git clone failed (exit code {proc.returncode})")
         return False
 
-    # Step 2: Run install.sh
+    # Step 2: Install system dependencies (cmake, libusb for openocd)
+    log_fn("Installing system dependencies (cmake, libusb) ...")
+    proc = subprocess.Popen(
+        ["apt-get", "install", "-y", "-qq", "cmake", "libusb-1.0-0"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    for line in iter(proc.stdout.readline, ""):
+        log_fn(line.rstrip())
+    proc.wait()
+    if proc.returncode != 0:
+        log_fn("Warning: failed to install system dependencies")
+
+    # Step 3: Run install.sh
     log_fn("")
     log_fn("Running install.sh (downloading toolchain, this may take a while) ...")
     proc = subprocess.Popen(
         ["bash", os.path.join(idf_dir, "install.sh"), "esp32s3"],
         cwd=idf_dir,
+        env=_clean_env_for_idf(),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     for line in iter(proc.stdout.readline, ""):
@@ -265,10 +297,13 @@ def _run_shell_with_idf(shell_cmd: str, cwd: str, log_fn) -> int:
     if not export_sh:
         log_fn("Error: ESP-IDF export.sh not found")
         return 1
-    full_cmd = f'. "{export_sh}" > /dev/null 2>&1 && {shell_cmd}'
+    log_fn(f"Sourcing {export_sh} ...")
+    # Show export.sh output so the user can see environment setup progress
+    full_cmd = f'. "{export_sh}" && {shell_cmd}'
     proc = subprocess.Popen(
         ["bash", "-c", full_cmd],
         cwd=cwd,
+        env=_clean_env_for_idf(),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     for line in iter(proc.stdout.readline, ""):
