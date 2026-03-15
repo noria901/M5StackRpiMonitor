@@ -238,17 +238,17 @@ def _install_idf(log_fn) -> bool:
         log_fn(f"git clone failed (exit code {proc.returncode})")
         return False
 
-    # Step 2: Ensure system dependencies for ESP-IDF tools (e.g. openocd)
-    log_fn("Installing system dependencies (libusb) ...")
+    # Step 2: Install system dependencies (cmake, libusb for openocd)
+    log_fn("Installing system dependencies (cmake, libusb) ...")
     proc = subprocess.Popen(
-        ["apt-get", "install", "-y", "-qq", "libusb-1.0-0"],
+        ["apt-get", "install", "-y", "-qq", "cmake", "libusb-1.0-0"],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     for line in iter(proc.stdout.readline, ""):
         log_fn(line.rstrip())
     proc.wait()
     if proc.returncode != 0:
-        log_fn("Warning: failed to install libusb-1.0-0 (openocd may not work)")
+        log_fn("Warning: failed to install system dependencies")
 
     # Step 3: Run install.sh
     log_fn("")
