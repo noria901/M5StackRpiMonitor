@@ -94,6 +94,11 @@ public:
     std::string getSavedServerName() const;
     BleState getState() const { return _state; }
 
+    // Check if GAP callback found saved server and wants to auto-connect
+    // Returns device index to connect, or -1 if none pending
+    int consumePendingAutoConnect();
+    bool discoverServiceAndChars();
+
     bool readAll();
     bool sendRegistration(const char* deviceName);
     bool sendPowerCommand(const char* action);
@@ -144,6 +149,9 @@ private:
     // Service/char discovery state
     volatile bool _discDone = false;
     int _discCharIdx = 0;
+
+    // Deferred auto-connect (set from GAP callback, consumed from main loop)
+    volatile int _pendingAutoConnectIdx = -1;
 
     // NVS helpers
     void _loadSavedServer();
