@@ -745,7 +745,8 @@ def api_idf_status():
 
 @app.route("/api/deploy/branches", methods=["GET"])
 def api_deploy_branches():
-    """API: Get git branches."""
+    """API: Get git branches (fetches remote first)."""
+    _git_run("fetch", "--prune", "origin")
     return jsonify({
         "branches": get_git_branches(),
         "current": get_git_info(),
