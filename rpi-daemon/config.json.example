@@ -1,5 +1,15 @@
 {
   "services": [
     "rpi-monitor"
+  ],
+  "commands": [
+    {
+      "name": "hello",
+      "command": "echo hello world"
+    },
+    {
+      "name": "sleep-test",
+      "command": "sleep 10"
+    }
   ]
 }

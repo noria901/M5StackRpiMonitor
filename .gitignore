@@ -4,3 +4,10 @@ logs/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# ESP-IDF / M5Dial firmware build artifacts
+m5dial-firmware/build/
+m5dial-firmware/managed_components/
+m5dial-firmware/dependencies.lock
+m5dial-firmware/sdkconfig.old
+m5dial-firmware/.vscode/

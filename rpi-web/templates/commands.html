@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPi Monitor - Commands</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 30px;
+        }
+        header h1 { color: #00d4ff; font-size: 1.8em; margin-bottom: 8px; }
+        header p { color: #888; font-size: 0.9em; }
+        nav {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        nav a {
+            color: #00d4ff;
+            text-decoration: none;
+            margin: 0 12px;
+            padding: 6px 16px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        nav a:hover, nav a.active { background: #0f3460; }
+        .cmd-card {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s;
+        }
+        .cmd-card:hover { border-color: #00d4ff; }
+        .cmd-name {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #fff;
+        }
+        .cmd-command {
+            font-family: monospace;
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 4px;
+        }
+        .cmd-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        .badge-idle { background: #333; color: #888; }
+        .badge-running { background: #3d3000; color: #d29922; animation: pulse 2s infinite; }
+        .badge-done { background: #0a3d0a; color: #4caf50; }
+        .badge-error { background: #3d0000; color: #ff4444; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; } 50% { opacity: 0.5; }
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.8; }
+        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .btn-run { background: #0f3460; color: #00d4ff; }
+        .btn-stop { background: #3d0000; color: #ff4444; }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        .empty-state h2 { margin-bottom: 12px; color: #888; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RPi Monitor</h1>
+            <p>Commands</p>
+        </header>
+
+        <nav>
+            <a href="/">Devices</a>
+            <a href="/flash">Flash</a>
+            <a href="/deploy">Deploy</a>
+            <a href="/commands" class="active">Commands</a>
+            <a href="/settings">Settings</a>
+        </nav>
+
+        {% if commands %}
+        <div id="cmd-list">
+            {% for cmd in commands %}
+            <div class="cmd-card" data-name="{{ cmd.name }}">
+                <div>
+                    <div class="cmd-name">{{ cmd.name }}</div>
+                    <div class="cmd-command">{{ cmd.command }}</div>
+                </div>
+                <div class="cmd-right">
+                    <span class="badge badge-idle cmd-badge">idle</span>
+                    <button class="btn btn-run cmd-btn" onclick="runCmd('{{ cmd.name }}')">Run</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h2>No Commands Configured</h2>
+            <p>Add commands to <code>/etc/rpi-monitor/config.json</code></p>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        async function runCmd(name) {
+            const card = document.querySelector(`.cmd-card[data-name="${name}"]`);
+            const btn = card.querySelector('.cmd-btn');
+            const badge = card.querySelector('.cmd-badge');
+            const isRunning = badge.textContent === 'running';
+
+            btn.disabled = true;
+            const action = isRunning ? 'stop' : 'run';
+
+            try {
+                const resp = await fetch('/api/commands/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, action })
+                });
+                const data = await resp.json();
+                if (data.status !== 'ok') {
+                    alert(data.message || 'Error');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+            btn.disabled = false;
+            refreshStatus();
+        }
+
+        async function refreshStatus() {
+            try {
+                const resp = await fetch('/api/commands/status');
+                const list = await resp.json();
+                for (const cmd of list) {
+                    const card = document.querySelector(`.cmd-card[data-name="${cmd.name}"]`);
+                    if (!card) continue;
+                    const badge = card.querySelector('.cmd-badge');
+                    const btn = card.querySelector('.cmd-btn');
+
+                    badge.textContent = cmd.state;
+                    badge.className = 'badge cmd-badge badge-' + cmd.state;
+
+                    if (cmd.state === 'running') {
+                        btn.textContent = 'Stop';
+                        btn.className = 'btn btn-stop cmd-btn';
+                    } else {
+                        btn.textContent = 'Run';
+                        btn.className = 'btn btn-run cmd-btn';
+                    }
+                }
+            } catch (err) {
+                // ignore polling errors
+            }
+        }
+
+        // Poll every 2 seconds
+        setInterval(refreshStatus, 2000);
+        refreshStatus();
+    </script>
+</body>
+</html>

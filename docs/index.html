@@ -201,6 +201,41 @@
       min-height: 1.2em;
     }
 
+    /* Commands */
+    .cmd-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .cmd-row:last-child { border-bottom: none; }
+    .cmd-name { font-size: 0.9rem; }
+    .cmd-state {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .cmd-state.idle { background: var(--border); color: var(--muted); }
+    .cmd-state.running { background: var(--yellow); color: #000; }
+    .cmd-state.done { background: var(--green); color: #000; }
+    .cmd-state.error { background: var(--red); color: #fff; }
+    .cmd-action {
+      background: var(--border);
+      color: var(--text);
+      border: none;
+      border-radius: 4px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      margin-left: 0.5rem;
+      transition: opacity .15s;
+    }
+    .cmd-action:hover { opacity: 0.8; }
+    .cmd-action:disabled { opacity: 0.3; cursor: not-allowed; }
+    .cmd-empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
+
     footer {
       margin-top: 2rem;
       text-align: center;
@@ -352,6 +387,14 @@
     </div>
     <div id="power-status"></div>
   </div>
+
+  <!-- Commands -->
+  <div class="card" id="card-commands">
+    <div class="card-title">Commands</div>
+    <div id="cmd-list">
+      <div class="cmd-empty">接続後に表示されます</div>
+    </div>
+  </div>
 </div>
 
 <footer style="margin-top:2rem;">
@@ -370,12 +413,15 @@ const CHAR_NETWORK  = '12345678-1234-5678-1234-56789abcdef4';
 const CHAR_SYSTEM   = '12345678-1234-5678-1234-56789abcdef5';
 const CHAR_SERVICES = '12345678-1234-5678-1234-56789abcdef7';
 const CHAR_SYSCTL   = '12345678-1234-5678-1234-56789abcdef8';
+const CHAR_COMMANDS = '12345678-1234-5678-1234-56789abcdef9';
 
 // ---- State ----------------------------------------------------------------
 let device = null;
 let server = null;
 let servicesChar = null;
 let sysCtrlChar  = null;
+let commandsChar = null;
+let cmdPollTimer = null;
 
 // ---- DOM refs -------------------------------------------------------------
 const dot    = document.getElementById('status-dot');
@@ -628,6 +674,60 @@ function setupPower() {
 
 setupPower();
 
+// ---- Commands handler -----------------------------------------------------
+function onCommands(event) {
+  const list = decode(event.target.value);
+  const container = document.getElementById('cmd-list');
+  if (!Array.isArray(list) || list.length === 0) {
+    container.innerHTML = '<div class="cmd-empty">設定されたコマンドがありません</div>';
+    return;
+  }
+  container.innerHTML = list.map(cmd => {
+    const st = cmd.state || 'idle';
+    const stBadge = `<span class="cmd-state ${st}">${st}</span>`;
+    const action = st === 'running' ? 'stop' : 'run';
+    const label = st === 'running' ? 'Stop' : 'Run';
+    return `<div class="cmd-row">
+      <span class="cmd-name">${escapeHtml(cmd.name)}</span>
+      <div>${stBadge}<button class="cmd-action" data-cmd="${escapeHtml(cmd.name)}" data-action="${action}">${label}</button></div>
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.cmd-action').forEach(btn => {
+    btn.addEventListener('click', onCommandAction);
+  });
+  updateTimestamp();
+}
+
+async function onCommandAction(e) {
+  const btn = e.currentTarget;
+  const name = btn.dataset.cmd;
+  const action = btn.dataset.action;
+  if (!commandsChar) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const cmd = JSON.stringify({ action, name });
+    await commandsChar.writeValue(new TextEncoder().encode(cmd));
+    await new Promise(r => setTimeout(r, 500));
+    const value = await commandsChar.readValue();
+    onCommands({ target: { value } });
+  } catch (err) {
+    console.error('Command error:', err);
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.disabled = false; btn.textContent = action === 'run' ? 'Run' : 'Stop'; }, 2000);
+  }
+}
+
+async function pollCommands() {
+  if (!commandsChar) return;
+  try {
+    const value = await commandsChar.readValue();
+    onCommands({ target: { value } });
+  } catch (err) {
+    // ignore
+  }
+}
+
 // ---- Subscribe helper -----------------------------------------------------
 async function subscribe(service, uuid, handler) {
   const char = await service.getCharacteristic(uuid);
@@ -671,6 +771,12 @@ async function connect() {
     document.getElementById('btn-reboot').disabled = false;
     document.getElementById('btn-shutdown').disabled = false;
 
+    // Commands (read/write; store ref + start polling)
+    commandsChar = await service.getCharacteristic(CHAR_COMMANDS);
+    const cmdValue = await commandsChar.readValue();
+    onCommands({ target: { value: cmdValue } });
+    cmdPollTimer = setInterval(pollCommands, 3000);
+
     setStatus('connected', device.name + ' に接続中');
     btn.textContent = 'Disconnect';
     btn.disabled = false;
@@ -683,6 +789,8 @@ async function connect() {
     server = null;
     servicesChar = null;
     sysCtrlChar = null;
+    commandsChar = null;
+    if (cmdPollTimer) { clearInterval(cmdPollTimer); cmdPollTimer = null; }
   }
 }
 
@@ -702,6 +810,8 @@ function onDisconnected() {
   server = null;
   servicesChar = null;
   sysCtrlChar = null;
+  commandsChar = null;
+  if (cmdPollTimer) { clearInterval(cmdPollTimer); cmdPollTimer = null; }
   // Reset Services card
   document.getElementById('svc-list').innerHTML =
     '<div class="svc-empty">接続後に表示されます</div>';
@@ -711,6 +821,9 @@ function onDisconnected() {
   document.getElementById('power-confirm').style.display = 'none';
   document.getElementById('power-buttons').style.display = 'block';
   document.getElementById('power-status').textContent = '';
+  // Reset Commands card
+  document.getElementById('cmd-list').innerHTML =
+    '<div class="cmd-empty">接続後に表示されます</div>';
 }
 
 btn.addEventListener('click', () => {

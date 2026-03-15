@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+dependencies:
+  ## led_strip is now a local component in components/led_strip
+  ## Required IDF version
+  idf:
+    version: ">=4.1.0"

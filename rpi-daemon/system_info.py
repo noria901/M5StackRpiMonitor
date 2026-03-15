@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import threading
 from datetime import datetime
 from functools import lru_cache
 import psutil
@@ -304,7 +305,9 @@ def system_control(action: str) -> dict:
     if action not in ("reboot", "shutdown"):
         return {"status": "error", "message": f"invalid action '{action}'"}
     try:
-        cmd = ["systemctl", action]
+        # "shutdown" maps to "systemctl poweroff"
+        systemctl_action = "poweroff" if action == "shutdown" else action
+        cmd = ["systemctl", systemctl_action]
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=15
         )
@@ -313,6 +316,94 @@ def system_control(action: str) -> dict:
         return {"status": "error", "message": result.stderr.strip()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+class CommandRunner:
+    """Manages background command execution with status tracking."""
+
+    def __init__(self, config_commands: list[dict]):
+        # config_commands: [{"name": "...", "command": "..."}]
+        self._allowed: dict[str, str] = {}
+        for entry in config_commands:
+            name = entry.get("name", "")
+            cmd = entry.get("command", "")
+            if name and cmd:
+                self._allowed[name] = cmd
+        self._lock = threading.Lock()
+        # state per command name: {state, exit_code, proc}
+        self._state: dict[str, dict] = {
+            name: {"state": "idle", "exit_code": None, "proc": None}
+            for name in self._allowed
+        }
+
+    def get_status(self) -> list[dict]:
+        """Return list of commands with current state."""
+        result = []
+        with self._lock:
+            for name in self._allowed:
+                s = self._state.get(name, {"state": "idle", "exit_code": None})
+                # Check if running process has finished
+                proc = s.get("proc")
+                if proc is not None and s["state"] == "running":
+                    ret = proc.poll()
+                    if ret is not None:
+                        s["state"] = "done" if ret == 0 else "error"
+                        s["exit_code"] = ret
+                        s["proc"] = None
+                result.append({
+                    "name": name,
+                    "state": s["state"],
+                    "exit_code": s["exit_code"],
+                })
+        return result
+
+    def run(self, name: str) -> dict:
+        """Start a command in the background."""
+        if name not in self._allowed:
+            return {"status": "error", "message": f"command '{name}' not in config"}
+        with self._lock:
+            s = self._state[name]
+            # Refresh state of running process
+            proc = s.get("proc")
+            if proc is not None and proc.poll() is None:
+                return {"status": "error", "message": f"'{name}' is already running"}
+        try:
+            proc = subprocess.Popen(
+                self._allowed[name],
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            with self._lock:
+                self._state[name] = {
+                    "state": "running",
+                    "exit_code": None,
+                    "proc": proc,
+                }
+            return {"status": "ok"}
+        except Exception as e:
+            with self._lock:
+                self._state[name] = {
+                    "state": "error",
+                    "exit_code": -1,
+                    "proc": None,
+                }
+            return {"status": "error", "message": str(e)}
+
+    def stop(self, name: str) -> dict:
+        """Stop a running command."""
+        if name not in self._allowed:
+            return {"status": "error", "message": f"command '{name}' not in config"}
+        with self._lock:
+            s = self._state.get(name, {})
+            proc = s.get("proc")
+            if proc is None or proc.poll() is not None:
+                return {"status": "error", "message": f"'{name}' is not running"}
+            proc.terminate()
+            s["state"] = "idle"
+            s["exit_code"] = None
+            s["proc"] = None
+        return {"status": "ok"}
 
 
 if __name__ == "__main__":

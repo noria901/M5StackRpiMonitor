@@ -264,3 +264,143 @@ class TestBLELocalName:
         ble_server._ble_name_override = ""
         with patch("ble_server.detect_platform", return_value="rpi"):
             assert ble_server._ble_local_name() == "RPi-Monitor"
+
+
+class TestCommandRunner:
+    """Tests for CommandRunner background command execution."""
+
+    def test_init_with_commands(self):
+        runner = system_info.CommandRunner([
+            {"name": "hello", "command": "echo hello"},
+            {"name": "sleep", "command": "sleep 1"},
+        ])
+        status = runner.get_status()
+        assert len(status) == 2
+        names = [s["name"] for s in status]
+        assert "hello" in names
+        assert "sleep" in names
+        for s in status:
+            assert s["state"] == "idle"
+            assert s["exit_code"] is None
+
+    def test_init_with_empty_list(self):
+        runner = system_info.CommandRunner([])
+        assert runner.get_status() == []
+
+    def test_init_skips_invalid_entries(self):
+        runner = system_info.CommandRunner([
+            {"name": "", "command": "echo"},
+            {"name": "ok", "command": ""},
+            {"command": "echo"},
+            {"name": "valid", "command": "echo hi"},
+        ])
+        status = runner.get_status()
+        assert len(status) == 1
+        assert status[0]["name"] == "valid"
+
+    def test_run_unknown_command(self):
+        runner = system_info.CommandRunner([
+            {"name": "hello", "command": "echo hello"},
+        ])
+        result = runner.run("unknown")
+        assert result["status"] == "error"
+        assert "not in config" in result["message"]
+
+    def test_stop_unknown_command(self):
+        runner = system_info.CommandRunner([
+            {"name": "hello", "command": "echo hello"},
+        ])
+        result = runner.stop("unknown")
+        assert result["status"] == "error"
+        assert "not in config" in result["message"]
+
+    def test_stop_idle_command(self):
+        runner = system_info.CommandRunner([
+            {"name": "hello", "command": "echo hello"},
+        ])
+        result = runner.stop("hello")
+        assert result["status"] == "error"
+        assert "not running" in result["message"]
+
+    def test_run_success(self):
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # still running
+        with patch("subprocess.Popen", return_value=mock_proc):
+            runner = system_info.CommandRunner([
+                {"name": "test", "command": "echo test"},
+            ])
+            result = runner.run("test")
+
+        assert result["status"] == "ok"
+        status = runner.get_status()
+        assert status[0]["state"] == "running"
+
+    def test_run_already_running(self):
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # still running
+        with patch("subprocess.Popen", return_value=mock_proc):
+            runner = system_info.CommandRunner([
+                {"name": "test", "command": "sleep 10"},
+            ])
+            runner.run("test")
+            result = runner.run("test")
+
+        assert result["status"] == "error"
+        assert "already running" in result["message"]
+
+    def test_process_completion_detected(self):
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # running initially
+        with patch("subprocess.Popen", return_value=mock_proc):
+            runner = system_info.CommandRunner([
+                {"name": "test", "command": "echo done"},
+            ])
+            runner.run("test")
+
+        # Simulate process completing with exit code 0
+        mock_proc.poll.return_value = 0
+        status = runner.get_status()
+        assert status[0]["state"] == "done"
+        assert status[0]["exit_code"] == 0
+
+    def test_process_error_detected(self):
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        with patch("subprocess.Popen", return_value=mock_proc):
+            runner = system_info.CommandRunner([
+                {"name": "test", "command": "false"},
+            ])
+            runner.run("test")
+
+        # Simulate process completing with non-zero exit code
+        mock_proc.poll.return_value = 1
+        status = runner.get_status()
+        assert status[0]["state"] == "error"
+        assert status[0]["exit_code"] == 1
+
+    def test_stop_running_command(self):
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # running
+        with patch("subprocess.Popen", return_value=mock_proc):
+            runner = system_info.CommandRunner([
+                {"name": "test", "command": "sleep 100"},
+            ])
+            runner.run("test")
+            result = runner.stop("test")
+
+        assert result["status"] == "ok"
+        mock_proc.terminate.assert_called_once()
+        status = runner.get_status()
+        assert status[0]["state"] == "idle"
+
+    def test_run_popen_exception(self):
+        with patch("subprocess.Popen", side_effect=OSError("no such cmd")):
+            runner = system_info.CommandRunner([
+                {"name": "bad", "command": "nonexistent"},
+            ])
+            result = runner.run("bad")
+
+        assert result["status"] == "error"
+        assert "no such cmd" in result["message"]
+        status = runner.get_status()
+        assert status[0]["state"] == "error"

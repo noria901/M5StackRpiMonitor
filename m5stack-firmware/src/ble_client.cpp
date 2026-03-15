@@ -169,6 +169,9 @@ bool BLEMonitorClient::readAll() {
     if (readCharacteristic(CHAR_SERVICES_UUID, data)) {
         parseServicesInfo(data);
     }
+    if (readCharacteristic(CHAR_COMMANDS_UUID, data)) {
+        parseCommandsInfo(data);
+    }
 
     lastDataMillis = millis();
     return true;
@@ -257,6 +260,21 @@ void BLEMonitorClient::parseServicesInfo(const String& json) {
     }
 }
 
+void BLEMonitorClient::parseCommandsInfo(const String& json) {
+    JsonDocument doc;
+    if (deserializeJson(doc, json) == DeserializationError::Ok) {
+        commands.clear();
+        JsonArray arr = doc.as<JsonArray>();
+        for (JsonObject obj : arr) {
+            CommandInfo ci;
+            ci.name = obj["name"] | "";
+            ci.state = obj["state"] | "idle";
+            ci.exitCode = obj["exit_code"] | -1;
+            commands.push_back(ci);
+        }
+    }
+}
+
 bool BLEMonitorClient::writeCharacteristic(const char* uuid, const String& data) {
     if (!isConnected() || !pService) return false;
     BLERemoteCharacteristic* pChar = pService->getCharacteristic(BLEUUID(uuid));
@@ -286,6 +304,15 @@ bool BLEMonitorClient::sendPowerCommand(const String& action) {
     return writeCharacteristic(CHAR_SYSTEM_CTRL_UUID, json);
 }
 
+bool BLEMonitorClient::sendCommand(const String& name, const String& action) {
+    JsonDocument doc;
+    doc["action"] = action;
+    doc["name"] = name;
+    String json;
+    serializeJson(doc, json);
+    return writeCharacteristic(CHAR_COMMANDS_UUID, json);
+}
+
 CpuInfo BLEMonitorClient::getCpuInfo() { return cpuInfo; }
 MemoryInfo BLEMonitorClient::getMemoryInfo() { return memoryInfo; }
 StorageInfo BLEMonitorClient::getStorageInfo() { return storageInfo; }
@@ -296,6 +323,12 @@ int BLEMonitorClient::getServiceCount() { return services.size(); }
 ServiceInfo BLEMonitorClient::getServiceInfo(int index) {
     if (index < 0 || index >= (int)services.size()) return ServiceInfo{};
     return services[index];
+}
+
+int BLEMonitorClient::getCommandCount() { return commands.size(); }
+CommandInfo BLEMonitorClient::getCommandInfo(int index) {
+    if (index < 0 || index >= (int)commands.size()) return CommandInfo{};
+    return commands[index];
 }
 
 String BLEMonitorClient::getServerName() { return serverName; }

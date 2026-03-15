@@ -84,6 +84,7 @@ void UI::nextScreen() {
     regConfirmMode = false;
     svcConfirmMode = false;
     pwrConfirmMode = false;
+    cmdConfirmMode = false;
 }
 
 void UI::prevScreen() {
@@ -93,6 +94,7 @@ void UI::prevScreen() {
     regConfirmMode = false;
     svcConfirmMode = false;
     pwrConfirmMode = false;
+    cmdConfirmMode = false;
 }
 
 void UI::servicesBtnA() {
@@ -137,6 +139,27 @@ void UI::powerBtnC() {
     }
 }
 
+void UI::commandsBtnA() {
+    if (cmdConfirmMode) {
+        cmdConfirmMode = false;
+        needsFullRedraw = true;
+    } else if (cmdSelectedIndex > 0) {
+        cmdSelectedIndex--;
+        needsFullRedraw = true;
+    } else {
+        prevScreen();
+    }
+}
+
+void UI::commandsBtnC(int commandCount) {
+    if (!cmdConfirmMode && cmdSelectedIndex < commandCount - 1) {
+        cmdSelectedIndex++;
+        needsFullRedraw = true;
+    } else if (!cmdConfirmMode) {
+        nextScreen();
+    }
+}
+
 void UI::buttonAction(BLEMonitorClient& ble) {
     if (currentScreen == Screen::SERVICES) {
         if (!ble.isConnected()) return;
@@ -154,6 +177,24 @@ void UI::buttonAction(BLEMonitorClient& ble) {
             needsFullRedraw = true;
         } else {
             svcConfirmMode = true;
+            needsFullRedraw = true;
+        }
+        return;
+    }
+    if (currentScreen == Screen::COMMANDS) {
+        if (!ble.isConnected()) return;
+        int count = ble.getCommandCount();
+        if (count == 0) return;
+        if (cmdConfirmMode) {
+            auto cmd = ble.getCommandInfo(cmdSelectedIndex);
+            String action = (cmd.state == "running") ? "stop" : "run";
+            ble.sendCommand(cmd.name, action);
+            delay(300);
+            ble.readAll();
+            cmdConfirmMode = false;
+            needsFullRedraw = true;
+        } else {
+            cmdConfirmMode = true;
             needsFullRedraw = true;
         }
         return;
@@ -264,6 +305,7 @@ void UI::update(BLEMonitorClient& ble) {
             case Screen::SYSTEM_INFO:   drawSystemInfo(ble); break;
             case Screen::SERVICES:      drawServices(ble); break;
             case Screen::POWER_MENU:    drawPowerMenu(ble); break;
+            case Screen::COMMANDS:      drawCommands(ble); break;
             case Screen::QR_CODE:       drawQrCodeScreen(ble); break;
             case Screen::SETTINGS:      drawSettings(); break;
             case Screen::REGISTRATION:  drawRegistration(ble); break;
@@ -322,7 +364,7 @@ void UI::drawFooter() {
     M5.Lcd.setTextColor(COLOR_TEXT_DIM);
 
     const char* screenNames[] = {
-        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "Services", "Power", "QR", "Settings", "Register"
+        "Dashboard", "CPU", "Memory", "Storage", "Network", "System", "Services", "Power", "Commands", "QR", "Settings", "Register"
     };
     int idx = (int)currentScreen;
 
@@ -802,6 +844,74 @@ void UI::drawPowerMenu(BLEMonitorClient& ble) {
         M5.Lcd.setTextColor(COLOR_TEXT_DIM);
         M5.Lcd.setCursor(10, y);
         M5.Lcd.print("[<] Up/Prev  [Sel] Execute  [>] Down/Next");
+    }
+}
+
+// === Commands Screen ===
+void UI::drawCommands(BLEMonitorClient& ble) {
+    drawScreenTitle("Commands");
+    int y = HEADER_HEIGHT + 36;
+
+    int count = ble.getCommandCount();
+    if (count == 0) {
+        M5.Lcd.setTextSize(1);
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("No commands configured.");
+        y += 16;
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("Edit /etc/rpi-monitor/config.json");
+        return;
+    }
+
+    M5.Lcd.setTextSize(1);
+    int maxVisible = 7;
+    for (int i = 0; i < count && i < maxVisible; i++) {
+        auto cmd = ble.getCommandInfo(i);
+
+        if (i == cmdSelectedIndex) {
+            M5.Lcd.setTextColor(COLOR_BG);
+            M5.Lcd.fillRect(8, y - 2, 304, 16, COLOR_ACCENT);
+        } else {
+            M5.Lcd.setTextColor(COLOR_TEXT);
+        }
+        M5.Lcd.setCursor(12, y);
+        M5.Lcd.print(cmd.name.c_str());
+
+        // 右端にステータス
+        int statusX = 230;
+        M5.Lcd.setCursor(statusX, y);
+        uint16_t stColor;
+        if (cmd.state == "running") {
+            stColor = COLOR_WARN;
+        } else if (cmd.state == "done") {
+            stColor = COLOR_GOOD;
+        } else if (cmd.state == "error") {
+            stColor = COLOR_BAD;
+        } else {
+            stColor = COLOR_TEXT_DIM;
+        }
+        if (i != cmdSelectedIndex) {
+            M5.Lcd.setTextColor(stColor);
+        }
+        M5.Lcd.print(cmd.state.c_str());
+        y += 18;
+    }
+
+    y += 8;
+    if (cmdConfirmMode) {
+        auto cmd = ble.getCommandInfo(cmdSelectedIndex);
+        const char* action = (cmd.state == "running") ? "Stop" : "Run";
+        M5.Lcd.setTextColor(COLOR_WARN);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.printf("%s '%s'?", action, cmd.name.c_str());
+        y += 16;
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("[<] Cancel  [Sel] OK");
+    } else {
+        M5.Lcd.setTextColor(COLOR_TEXT_DIM);
+        M5.Lcd.setCursor(10, y);
+        M5.Lcd.print("[<] Up/Prev  [Sel] Run/Stop  [>] Down/Next");
     }
 }
 
