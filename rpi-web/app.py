@@ -158,6 +158,36 @@ def _is_idf_installed() -> bool:
     return _find_idf_export_sh() is not None
 
 
+def _get_idf_version(idf_dir: str) -> str | None:
+    """Get the git tag / version of the installed ESP-IDF."""
+    version_file = os.path.join(idf_dir, "version.txt")
+    if os.path.isfile(version_file):
+        with open(version_file) as f:
+            return f.read().strip()
+    # Fallback: git describe
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--always"],
+            cwd=idf_dir, capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
+
+
+def _check_idf_version(idf_dir: str) -> bool:
+    """Check if installed ESP-IDF version matches the required version."""
+    version = _get_idf_version(idf_dir)
+    if version is None:
+        return False
+    # Normalize: strip leading 'v' for comparison
+    required = IDF_VERSION.lstrip("v")
+    installed = version.lstrip("v")
+    return installed.startswith(required)
+
+
 def _install_idf(log_fn) -> bool:
     """Download and install ESP-IDF. Returns True on success."""
     idf_dir = IDF_DEFAULT_DIR
@@ -203,10 +233,19 @@ def _install_idf(log_fn) -> bool:
 
 
 def _ensure_idf_installed(log_fn) -> bool:
-    """Check if ESP-IDF is installed; install it if not. Returns True if ready."""
-    if _is_idf_installed():
-        log_fn("ESP-IDF found.")
-        return True
+    """Check if ESP-IDF is installed with correct version; install if not."""
+    export_sh = _find_idf_export_sh()
+    if export_sh:
+        idf_dir = os.path.dirname(export_sh)
+        version = _get_idf_version(idf_dir)
+        if _check_idf_version(idf_dir):
+            log_fn(f"ESP-IDF {version} found.")
+            return True
+        else:
+            log_fn(f"ESP-IDF found but version mismatch: {version} (need {IDF_VERSION})")
+            log_fn(f"Removing {idf_dir} and reinstalling...")
+            import shutil
+            shutil.rmtree(idf_dir, ignore_errors=True)
 
     log_fn("ESP-IDF not found. Starting automatic installation...")
     log_fn("")
@@ -678,10 +717,20 @@ def api_flash_status():
 @app.route("/api/idf/status", methods=["GET"])
 def api_idf_status():
     """API: Check ESP-IDF installation status."""
+    installed = _is_idf_installed()
+    installed_version = None
+    version_ok = False
+    if installed:
+        export_sh = _find_idf_export_sh()
+        idf_dir = os.path.dirname(export_sh)
+        installed_version = _get_idf_version(idf_dir)
+        version_ok = _check_idf_version(idf_dir)
     return jsonify({
-        "installed": _is_idf_installed(),
+        "installed": installed,
+        "version_ok": version_ok,
+        "installed_version": installed_version,
+        "required_version": IDF_VERSION,
         "idf_dir": IDF_DEFAULT_DIR,
-        "version": IDF_VERSION,
     })
 
 
