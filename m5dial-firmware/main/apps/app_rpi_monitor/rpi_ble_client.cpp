@@ -289,13 +289,15 @@ bool RpiBleClient::connectToDevice(int index)
         return false;
     }
 
-    // Wait for connection event (up to 10 seconds)
-    for (int i = 0; i < 100 && _state == BleState::CONNECTING; i++) {
+    // Wait for connection event (up to 15 seconds)
+    // ble_gap_connect timeout is 10s, so we need to wait longer to avoid race
+    for (int i = 0; i < 150 && _state == BleState::CONNECTING; i++) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
     if (_state != BleState::CONNECTED) {
         ESP_LOGW(TAG, "Connection timed out");
+        ble_gap_conn_cancel();
         _state = BleState::DISCONNECTED;
         return false;
     }
@@ -617,13 +619,14 @@ void RpiBleClient::onGapEvent(int event, void* arg)
                 ESP_LOGI(TAG, "Found RPi: '%s'", name.c_str());
 
                 // Auto-connect if this is the saved server
+                // NOTE: Do NOT call connectToDevice() here - we're in GAP callback context
+                // and vTaskDelay loops would block NimBLE from delivering events.
+                // Instead, set a flag for the main loop to consume.
                 if (!_savedServerName.empty() && name == _savedServerName) {
-                    ESP_LOGI(TAG, "Found saved server, auto-connecting...");
+                    ESP_LOGI(TAG, "Found saved server, deferring auto-connect...");
                     ble_gap_disc_cancel();
                     _state = BleState::DISCONNECTED;
-
-                    // Connect to the last device in the list (the one we just added)
-                    connectToDevice((int)_foundDevices.size() - 1);
+                    _pendingAutoConnectIdx = (int)_foundDevices.size() - 1;
                 }
             }
             break;
@@ -681,6 +684,23 @@ void RpiBleClient::onGattcCharDiscComplete(int status, uint16_t charIdx, uint16_
         _charHandles[charIdx] = valHandle;
         ESP_LOGI(TAG, "Char[%d] handle=%d", charIdx, valHandle);
     }
+}
+
+int RpiBleClient::consumePendingAutoConnect()
+{
+    int idx = _pendingAutoConnectIdx;
+    _pendingAutoConnectIdx = -1;
+    return idx;
+}
+
+bool RpiBleClient::discoverServiceAndChars()
+{
+    if (_state != BleState::CONNECTED) return false;
+    if (!_discoverService() || !_discoverCharacteristics()) {
+        ESP_LOGE(TAG, "Service discovery failed");
+        return false;
+    }
+    return true;
 }
 
 // ---- NVS Helpers ----

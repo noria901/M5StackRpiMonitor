@@ -67,6 +67,16 @@ void RpiMonitor::onRunning()
         _needsRedraw = true;
     }
 
+    // Check for deferred auto-connect from GAP callback
+    int pendingIdx = _ble.consumePendingAutoConnect();
+    if (pendingIdx >= 0) {
+        ESP_LOGI(_tag, "Executing deferred auto-connect to device %d", pendingIdx);
+        if (_ble.connectToDevice(pendingIdx)) {
+            _currentScreen = Screen::DASHBOARD;
+            _needsRedraw = true;
+        }
+    }
+
     // Auto-reconnect: if we have a saved server but not connected, try periodically
     if (_ble.hasSavedServer() &&
         _ble.getState() == BleState::DISCONNECTED &&
