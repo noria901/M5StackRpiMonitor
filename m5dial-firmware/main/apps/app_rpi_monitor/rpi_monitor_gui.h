@@ -15,6 +15,11 @@ public:
     void drawStorageDetail(const RpiBleClient& ble);
     void drawNetwork(const RpiBleClient& ble);
     void drawSystemInfo(const RpiBleClient& ble);
+    void drawServices(const RpiBleClient& ble, int selectedIndex, bool confirmMode);
+    void drawPowerMenu(int selectedIndex, bool confirmMode);
+    void drawCommands(const RpiBleClient& ble, int selectedIndex, bool confirmMode);
+    void drawQrCode(const RpiBleClient& ble);
+    void drawSettings(bool soundEnabled);
     void drawRegistration(const RpiBleClient& ble, int selectedDevice, bool confirmMode);
 
     // Overlay

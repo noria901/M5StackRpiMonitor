@@ -385,6 +385,258 @@ void RpiMonitorGui::drawSystemInfo(const RpiBleClient& ble)
     }
 }
 
+// ---- Services Screen ----
+
+void RpiMonitorGui::drawServices(const RpiBleClient& ble, int selectedIndex, bool confirmMode)
+{
+    _drawTitle("Services");
+
+    auto* c = _hal->canvas;
+    int count = ble.getServiceCount();
+
+    if (count == 0) {
+        _drawCenteredText(100, "No services", COL_TEXT_DIM, &fonts::Font2);
+        _drawCenteredText(130, "configured", COL_TEXT_DIM, &fonts::Font0);
+        return;
+    }
+
+    int y = CONTENT_START_Y;
+    int maxVisible = 5;
+    c->setFont(&fonts::Font0);
+
+    for (int i = 0; i < count && i < maxVisible; i++) {
+        auto& svc = ble.getServiceInfo(i);
+        bool selected = (i == selectedIndex);
+        int rowY = y + i * 22;
+
+        if (selected) {
+            c->fillRoundRect(TEXT_LEFT - 4, rowY - 3, TEXT_RIGHT - TEXT_LEFT + 8, 20,
+                             4, COL_HIGHLIGHT);
+        }
+
+        // Status indicator
+        uint16_t stColor = svc.active ? COL_GOOD : COL_BAD;
+        c->fillCircle(TEXT_LEFT + 4, rowY + 5, 4, stColor);
+
+        // Service name
+        c->setTextColor(selected ? COL_TEXT : COL_TEXT_DIM);
+        c->setCursor(TEXT_LEFT + 14, rowY);
+        c->print(svc.name.c_str());
+
+        // Status text (right-aligned)
+        const char* stText = svc.active ? "active" : "inactive";
+        c->setTextColor(stColor);
+        int tw = c->textWidth(stText);
+        c->setCursor(TEXT_RIGHT - tw, rowY);
+        c->print(stText);
+    }
+
+    // Confirm dialog
+    y = y + maxVisible * 22 + 4;
+    if (confirmMode && selectedIndex >= 0 && selectedIndex < count) {
+        auto& svc = ble.getServiceInfo(selectedIndex);
+        const char* action = svc.active ? "Stop" : "Start";
+        char msg[48];
+        snprintf(msg, sizeof(msg), "%s %s?", action, svc.name.c_str());
+        _drawCenteredText(y, msg, COL_WARN, &fonts::Font0);
+        y += 14;
+        _drawCenteredText(y, "Rotate=Cancel  Press=OK", COL_TEXT_DIM, &fonts::Font0);
+    } else {
+        _drawCenteredText(y, "Rotate=Scroll  Press=Toggle", COL_TEXT_DIM, &fonts::Font0);
+    }
+}
+
+// ---- Power Menu Screen ----
+
+void RpiMonitorGui::drawPowerMenu(int selectedIndex, bool confirmMode)
+{
+    _drawTitle("Power");
+
+    auto* c = _hal->canvas;
+    const char* items[] = {"Reboot", "Shutdown"};
+    uint16_t colors[] = {COL_WARN, COL_BAD};
+
+    int y = 80;
+    for (int i = 0; i < 2; i++) {
+        bool selected = (i == selectedIndex);
+        int rowY = y + i * 40;
+
+        if (selected) {
+            c->fillRoundRect(TEXT_LEFT - 4, rowY - 6, TEXT_RIGHT - TEXT_LEFT + 8, 30,
+                             6, COL_HIGHLIGHT);
+        }
+
+        c->setFont(&fonts::Font2);
+        c->setTextColor(colors[i]);
+        int tw = c->textWidth(items[i]);
+        c->setCursor((DISP_W - tw) / 2, rowY);
+        c->print(items[i]);
+    }
+
+    int msgY = 175;
+    if (confirmMode) {
+        char msg[32];
+        snprintf(msg, sizeof(msg), "%s?", items[selectedIndex]);
+        _drawCenteredText(msgY, msg, COL_BAD, &fonts::Font2);
+        msgY += 20;
+        _drawCenteredText(msgY, "Rotate=Cancel  Press=Confirm", COL_TEXT_DIM, &fonts::Font0);
+    } else {
+        _drawCenteredText(msgY, "Rotate=Select  Press=Confirm", COL_TEXT_DIM, &fonts::Font0);
+    }
+}
+
+// ---- Commands Screen ----
+
+void RpiMonitorGui::drawCommands(const RpiBleClient& ble, int selectedIndex, bool confirmMode)
+{
+    _drawTitle("Commands");
+
+    auto* c = _hal->canvas;
+    int count = ble.getCommandCount();
+
+    if (count == 0) {
+        _drawCenteredText(100, "No commands", COL_TEXT_DIM, &fonts::Font2);
+        _drawCenteredText(130, "configured", COL_TEXT_DIM, &fonts::Font0);
+        return;
+    }
+
+    int y = CONTENT_START_Y;
+    int maxVisible = 5;
+    c->setFont(&fonts::Font0);
+
+    for (int i = 0; i < count && i < maxVisible; i++) {
+        auto& cmd = ble.getCommandInfo(i);
+        bool selected = (i == selectedIndex);
+        int rowY = y + i * 22;
+
+        if (selected) {
+            c->fillRoundRect(TEXT_LEFT - 4, rowY - 3, TEXT_RIGHT - TEXT_LEFT + 8, 20,
+                             4, COL_HIGHLIGHT);
+        }
+
+        // Command name
+        c->setTextColor(selected ? COL_TEXT : COL_TEXT_DIM);
+        c->setCursor(TEXT_LEFT, rowY);
+        c->print(cmd.name.c_str());
+
+        // State (right-aligned)
+        uint16_t stColor = COL_TEXT_DIM;
+        if (cmd.state == "running") stColor = COL_WARN;
+        else if (cmd.state == "done") stColor = COL_GOOD;
+        else if (cmd.state == "error") stColor = COL_BAD;
+
+        c->setTextColor(stColor);
+        int tw = c->textWidth(cmd.state.c_str());
+        c->setCursor(TEXT_RIGHT - tw, rowY);
+        c->print(cmd.state.c_str());
+    }
+
+    // Confirm dialog
+    y = y + maxVisible * 22 + 4;
+    if (confirmMode && selectedIndex >= 0 && selectedIndex < count) {
+        auto& cmd = ble.getCommandInfo(selectedIndex);
+        const char* action = (cmd.state == "running") ? "Stop" : "Run";
+        char msg[48];
+        snprintf(msg, sizeof(msg), "%s '%s'?", action, cmd.name.c_str());
+        _drawCenteredText(y, msg, COL_WARN, &fonts::Font0);
+        y += 14;
+        _drawCenteredText(y, "Rotate=Cancel  Press=OK", COL_TEXT_DIM, &fonts::Font0);
+    } else {
+        _drawCenteredText(y, "Rotate=Scroll  Press=Execute", COL_TEXT_DIM, &fonts::Font0);
+    }
+}
+
+// ---- QR Code Screen ----
+
+#include <lgfx/utility/lgfx_qrcode.h>
+
+void RpiMonitorGui::drawQrCode(const RpiBleClient& ble)
+{
+    _drawTitle("QR Code");
+
+    auto* c = _hal->canvas;
+    auto& net = ble.getNetworkInfo();
+
+    if (net.ip.empty() || net.ip == "0.0.0.0") {
+        _drawCenteredText(110, "IP not available", COL_TEXT_DIM, &fonts::Font2);
+        return;
+    }
+
+    // Generate QR code for http://<ip>:5000
+    char url[64];
+    snprintf(url, sizeof(url), "http://%s:5000", net.ip.c_str());
+
+    // QR version 3 = 29 modules
+    uint8_t qrcodeData[lgfx_qrcode_getBufferSize(3)];
+    QRCode qrcode;
+    int8_t err = lgfx_qrcode_initText(&qrcode, qrcodeData, 3, 0, url);  // ECC_LOW=0
+    if (err != 0) {
+        _drawCenteredText(110, "QR Error", COL_BAD, &fonts::Font2);
+        return;
+    }
+
+    // Draw QR code centered
+    int moduleSize = 3;
+    int qrSize = qrcode.size * moduleSize;
+    int qrX = (DISP_W - qrSize) / 2;
+    int qrY = 50;
+
+    // White background
+    c->fillRect(qrX - 4, qrY - 4, qrSize + 8, qrSize + 8, COL_TEXT);
+
+    for (uint8_t y = 0; y < qrcode.size; y++) {
+        for (uint8_t x = 0; x < qrcode.size; x++) {
+            if (lgfx_qrcode_getModule(&qrcode, x, y)) {
+                c->fillRect(qrX + x * moduleSize, qrY + y * moduleSize,
+                            moduleSize, moduleSize, COL_BG);
+            }
+        }
+    }
+
+    // URL label below
+    int labelY = qrY + qrSize + 10;
+    char label[48];
+    snprintf(label, sizeof(label), "Monitor :5000");
+    _drawCenteredText(labelY, label, COL_ACCENT, &fonts::Font0);
+
+    labelY += 14;
+    _drawCenteredText(labelY, net.ip.c_str(), COL_TEXT_DIM, &fonts::Font0);
+}
+
+// ---- Settings Screen ----
+
+void RpiMonitorGui::drawSettings(bool soundEnabled)
+{
+    _drawTitle("Settings");
+
+    auto* c = _hal->canvas;
+    int y = CONTENT_START_Y + 10;
+
+    // Sound toggle
+    _drawKeyValue(y, "Sound:", soundEnabled ? "ON" : "OFF",
+                  soundEnabled ? COL_GOOD : COL_BAD);
+
+    y += 30;
+    _drawCenteredText(y, "Press to toggle sound", COL_TEXT_DIM, &fonts::Font0);
+
+    // Alert thresholds (info display)
+    y += 30;
+    c->setFont(&fonts::Font0);
+    c->setTextColor(COL_TEXT_DIM);
+    int tw = c->textWidth("-- Alert Thresholds --");
+    c->setCursor((DISP_W - tw) / 2, y);
+    c->print("-- Alert Thresholds --");
+
+    y += 16;
+    _drawKeyValue(y, "CPU:", "90%", COL_TEXT);
+    y += 14;
+    _drawKeyValue(y, "Temp:", "80 C", COL_TEXT);
+    y += 14;
+    _drawKeyValue(y, "RAM:", "90%", COL_TEXT);
+    y += 14;
+    _drawKeyValue(y, "Disk:", "95%", COL_TEXT);
+}
+
 // ---- Registration Screen ----
 
 void RpiMonitorGui::drawRegistration(const RpiBleClient& ble, int selectedDevice,

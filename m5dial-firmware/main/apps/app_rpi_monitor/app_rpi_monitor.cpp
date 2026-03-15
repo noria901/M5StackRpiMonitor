@@ -1,5 +1,6 @@
 #include "app_rpi_monitor.h"
 #include <esp_log.h>
+#include <nvs.h>
 #include <cmath>
 
 using namespace MOONCAKE::USER_APP;
@@ -22,6 +23,7 @@ void RpiMonitor::onCreate()
 
     _ble.init();
     _gui.init(_data.hal);
+    _loadSettings();
 
     // If a saved server exists, start on Dashboard for auto-reconnect
     if (_ble.hasSavedServer()) {
@@ -94,6 +96,21 @@ void RpiMonitor::onRunning()
             case Screen::SYSTEM_INFO:
                 _gui.drawSystemInfo(_ble);
                 break;
+            case Screen::SERVICES:
+                _gui.drawServices(_ble, _svcSelectedIndex, _svcConfirmMode);
+                break;
+            case Screen::POWER_MENU:
+                _gui.drawPowerMenu(_pwrSelectedIndex, _pwrConfirmMode);
+                break;
+            case Screen::COMMANDS:
+                _gui.drawCommands(_ble, _cmdSelectedIndex, _cmdConfirmMode);
+                break;
+            case Screen::QR_CODE:
+                _gui.drawQrCode(_ble);
+                break;
+            case Screen::SETTINGS:
+                _gui.drawSettings(_soundEnabled);
+                break;
             case Screen::REGISTRATION:
                 _gui.drawRegistration(_ble, _regSelectedDevice, _regConfirmMode);
                 break;
@@ -139,11 +156,28 @@ void RpiMonitor::_handleEncoder()
     // dir < 1 = CW (next), dir >= 1 = CCW (prev)
 
     if (_currentScreen == Screen::REGISTRATION) {
-        // In Registration: encoder scrolls device list
         if (dir < 1) {
             _registrationScrollDown(_ble.getFoundDeviceCount());
         } else {
             _registrationScrollUp();
+        }
+    } else if (_currentScreen == Screen::SERVICES) {
+        if (dir < 1) {
+            _listScrollDown(_svcSelectedIndex, _svcConfirmMode, _ble.getServiceCount());
+        } else {
+            _listScrollUp(_svcSelectedIndex, _svcConfirmMode);
+        }
+    } else if (_currentScreen == Screen::POWER_MENU) {
+        if (dir < 1) {
+            _listScrollDown(_pwrSelectedIndex, _pwrConfirmMode, 2);
+        } else {
+            _listScrollUp(_pwrSelectedIndex, _pwrConfirmMode);
+        }
+    } else if (_currentScreen == Screen::COMMANDS) {
+        if (dir < 1) {
+            _listScrollDown(_cmdSelectedIndex, _cmdConfirmMode, _ble.getCommandCount());
+        } else {
+            _listScrollUp(_cmdSelectedIndex, _cmdConfirmMode);
         }
     } else {
         // Normal: encoder switches screens
@@ -170,6 +204,14 @@ void RpiMonitor::_handleButton()
 
     if (_currentScreen == Screen::REGISTRATION) {
         _registrationAction();
+    } else if (_currentScreen == Screen::SERVICES) {
+        _servicesAction();
+    } else if (_currentScreen == Screen::POWER_MENU) {
+        _powerAction();
+    } else if (_currentScreen == Screen::COMMANDS) {
+        _commandsAction();
+    } else if (_currentScreen == Screen::SETTINGS) {
+        _settingsAction();
     } else if (_ble.getState() == BleState::CONNECTED) {
         // Connected: button forces data refresh
         _ble.readAll();
@@ -204,6 +246,14 @@ void RpiMonitor::_handleTouch()
 
         if (_currentScreen == Screen::REGISTRATION) {
             _registrationAction();
+        } else if (_currentScreen == Screen::SERVICES) {
+            _servicesAction();
+        } else if (_currentScreen == Screen::POWER_MENU) {
+            _powerAction();
+        } else if (_currentScreen == Screen::COMMANDS) {
+            _commandsAction();
+        } else if (_currentScreen == Screen::SETTINGS) {
+            _settingsAction();
         } else if (_ble.getState() == BleState::CONNECTED) {
             _ble.readAll();
             _lastDataUpdate = now;
@@ -220,6 +270,9 @@ void RpiMonitor::_nextScreen()
     int next = (static_cast<int>(_currentScreen) + 1) % SCREEN_COUNT;
     _currentScreen = static_cast<Screen>(next);
     _regConfirmMode = false;
+    _svcConfirmMode = false;
+    _pwrConfirmMode = false;
+    _cmdConfirmMode = false;
 }
 
 void RpiMonitor::_prevScreen()
@@ -227,6 +280,9 @@ void RpiMonitor::_prevScreen()
     int prev = (static_cast<int>(_currentScreen) - 1 + SCREEN_COUNT) % SCREEN_COUNT;
     _currentScreen = static_cast<Screen>(prev);
     _regConfirmMode = false;
+    _svcConfirmMode = false;
+    _pwrConfirmMode = false;
+    _cmdConfirmMode = false;
 }
 
 // --- Registration Actions ---
@@ -283,4 +339,123 @@ void RpiMonitor::_registrationScrollDown(int deviceCount)
     if (!_regConfirmMode && _regSelectedDevice < deviceCount - 1) {
         _regSelectedDevice++;
     }
+}
+
+// --- List Screen Helpers ---
+
+void RpiMonitor::_listScrollUp(int& selectedIndex, bool& confirmMode)
+{
+    if (confirmMode) {
+        confirmMode = false;
+    } else if (selectedIndex > 0) {
+        selectedIndex--;
+    }
+}
+
+void RpiMonitor::_listScrollDown(int& selectedIndex, bool& confirmMode, int count)
+{
+    if (!confirmMode && selectedIndex < count - 1) {
+        selectedIndex++;
+    }
+}
+
+// --- Services Action ---
+
+void RpiMonitor::_servicesAction()
+{
+    if (_ble.getState() != BleState::CONNECTED) return;
+
+    int count = _ble.getServiceCount();
+    if (count == 0) return;
+
+    if (_svcConfirmMode) {
+        // Execute toggle
+        auto& svc = _ble.getServiceInfo(_svcSelectedIndex);
+        const char* action = svc.active ? "stop" : "start";
+        _ble.sendServiceControl(svc.name.c_str(), action);
+        _svcConfirmMode = false;
+        // Refresh data after a short delay
+        vTaskDelay(pdMS_TO_TICKS(500));
+        _ble.readAll();
+        _lastDataUpdate = (unsigned long)(esp_timer_get_time() / 1000);
+    } else {
+        _svcConfirmMode = true;
+    }
+    _needsRedraw = true;
+}
+
+// --- Power Action ---
+
+void RpiMonitor::_powerAction()
+{
+    if (_ble.getState() != BleState::CONNECTED) return;
+
+    if (_pwrConfirmMode) {
+        const char* action = (_pwrSelectedIndex == 0) ? "reboot" : "shutdown";
+        _ble.sendPowerCommand(action);
+        _pwrConfirmMode = false;
+    } else {
+        _pwrConfirmMode = true;
+    }
+    _needsRedraw = true;
+}
+
+// --- Commands Action ---
+
+void RpiMonitor::_commandsAction()
+{
+    if (_ble.getState() != BleState::CONNECTED) return;
+
+    int count = _ble.getCommandCount();
+    if (count == 0) return;
+
+    if (_cmdConfirmMode) {
+        auto& cmd = _ble.getCommandInfo(_cmdSelectedIndex);
+        const char* action = (cmd.state == "running") ? "stop" : "run";
+        _ble.sendCommand(cmd.name.c_str(), action);
+        _cmdConfirmMode = false;
+        vTaskDelay(pdMS_TO_TICKS(300));
+        _ble.readAll();
+        _lastDataUpdate = (unsigned long)(esp_timer_get_time() / 1000);
+    } else {
+        _cmdConfirmMode = true;
+    }
+    _needsRedraw = true;
+}
+
+// --- Settings Action ---
+
+void RpiMonitor::_settingsAction()
+{
+    _soundEnabled = !_soundEnabled;
+    _saveSettings();
+    if (_soundEnabled) {
+        _data.hal->buzz.tone(1000, 150);
+    }
+    _needsRedraw = true;
+}
+
+// --- NVS Settings ---
+
+void RpiMonitor::_loadSettings()
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open("ui", NVS_READONLY, &nvs);
+    if (err != ESP_OK) return;
+
+    uint8_t val = 1;
+    nvs_get_u8(nvs, "sound", &val);
+    _soundEnabled = (val != 0);
+    nvs_close(nvs);
+}
+
+void RpiMonitor::_saveSettings()
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open("ui", NVS_READWRITE, &nvs);
+    if (err != ESP_OK) return;
+
+    nvs_set_u8(nvs, "sound", _soundEnabled ? 1 : 0);
+    nvs_commit(nvs);
+    nvs_close(nvs);
 }

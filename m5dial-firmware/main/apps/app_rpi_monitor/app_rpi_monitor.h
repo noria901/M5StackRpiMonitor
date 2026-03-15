@@ -34,6 +34,11 @@ private:
         STORAGE_DETAIL,
         NETWORK,
         SYSTEM_INFO,
+        SERVICES,
+        POWER_MENU,
+        COMMANDS,
+        QR_CODE,
+        SETTINGS,
         REGISTRATION,
         SCREEN_COUNT
     };
@@ -43,6 +48,21 @@ private:
     // Registration screen state
     int _regSelectedDevice = 0;
     bool _regConfirmMode = false;
+
+    // Services screen state
+    int _svcSelectedIndex = 0;
+    bool _svcConfirmMode = false;
+
+    // Power menu state
+    int _pwrSelectedIndex = 0;
+    bool _pwrConfirmMode = false;
+
+    // Commands screen state
+    int _cmdSelectedIndex = 0;
+    bool _cmdConfirmMode = false;
+
+    // Settings state
+    bool _soundEnabled = true;
 
     // Update timing
     unsigned long _lastDataUpdate = 0;
@@ -73,6 +93,20 @@ private:
     void _registrationAction();
     void _registrationScrollUp();
     void _registrationScrollDown(int deviceCount);
+
+    // List screen helpers
+    void _listScrollUp(int& selectedIndex, bool& confirmMode);
+    void _listScrollDown(int& selectedIndex, bool& confirmMode, int count);
+
+    // Screen-specific actions
+    void _servicesAction();
+    void _powerAction();
+    void _commandsAction();
+    void _settingsAction();
+
+    // NVS settings
+    void _loadSettings();
+    void _saveSettings();
 };
 
 }  // namespace USER_APP

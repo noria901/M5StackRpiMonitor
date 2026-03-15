@@ -63,6 +63,10 @@ static const ble_uuid128_t kCharUuids[RPI_CHAR_COUNT] = {
         0xf8, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
         0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12
     ),
+    BLE_UUID128_INIT(  // Commands (def9)
+        0xf9, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
+        0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12
+    ),
 };
 
 // ---- NimBLE C Callbacks ----
@@ -459,6 +463,12 @@ bool RpiBleClient::readAll()
     if (_readCharacteristic(RPI_CHAR_IDX_SYSTEM, buf, sizeof(buf))) {
         _parseSystemInfo(buf);
     }
+    if (_readCharacteristic(RPI_CHAR_IDX_SERVICES, buf, sizeof(buf))) {
+        _parseServicesInfo(buf);
+    }
+    if (_readCharacteristic(RPI_CHAR_IDX_COMMANDS, buf, sizeof(buf))) {
+        _parseCommandsInfo(buf);
+    }
 
     return true;
 }
@@ -503,6 +513,51 @@ bool RpiBleClient::sendPowerCommand(const char* action)
     cJSON_free(json);
     cJSON_Delete(root);
     return ok;
+}
+
+bool RpiBleClient::sendServiceControl(const char* serviceName, const char* action)
+{
+    if (_state != BleState::CONNECTED) return false;
+
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "action", action);
+    cJSON_AddStringToObject(root, "service", serviceName);
+
+    char* json = cJSON_PrintUnformatted(root);
+    bool ok = _writeCharacteristic(RPI_CHAR_IDX_SERVICES, json, strlen(json));
+    cJSON_free(json);
+    cJSON_Delete(root);
+    return ok;
+}
+
+bool RpiBleClient::sendCommand(const char* name, const char* action)
+{
+    if (_state != BleState::CONNECTED) return false;
+
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "action", action);
+    cJSON_AddStringToObject(root, "name", name);
+
+    char* json = cJSON_PrintUnformatted(root);
+    bool ok = _writeCharacteristic(RPI_CHAR_IDX_COMMANDS, json, strlen(json));
+    cJSON_free(json);
+    cJSON_Delete(root);
+    return ok;
+}
+
+static const RpiServiceInfo kEmptyService;
+static const RpiCommandInfo kEmptyCommand;
+
+const RpiServiceInfo& RpiBleClient::getServiceInfo(int index) const
+{
+    if (index < 0 || index >= (int)_services.size()) return kEmptyService;
+    return _services[index];
+}
+
+const RpiCommandInfo& RpiBleClient::getCommandInfo(int index) const
+{
+    if (index < 0 || index >= (int)_commands.size()) return kEmptyCommand;
+    return _commands[index];
 }
 
 // ---- GAP Event Handler ----
@@ -764,6 +819,50 @@ void RpiBleClient::_parseSystemInfo(const char* json)
     if (item && cJSON_IsString(item)) _sysInfo.time = item->valuestring;
     item = cJSON_GetObjectItem(root, "platform");
     if (item && cJSON_IsString(item)) _sysInfo.platform = item->valuestring;
+
+    cJSON_Delete(root);
+}
+
+void RpiBleClient::_parseServicesInfo(const char* json)
+{
+    cJSON* root = cJSON_Parse(json);
+    if (!root) return;
+
+    _services.clear();
+    int count = cJSON_GetArraySize(root);
+    for (int i = 0; i < count; i++) {
+        cJSON* obj = cJSON_GetArrayItem(root, i);
+        if (!obj) continue;
+        RpiServiceInfo si;
+        cJSON* item = cJSON_GetObjectItem(obj, "name");
+        if (item && cJSON_IsString(item)) si.name = item->valuestring;
+        item = cJSON_GetObjectItem(obj, "active");
+        if (item) si.active = cJSON_IsTrue(item);
+        _services.push_back(si);
+    }
+
+    cJSON_Delete(root);
+}
+
+void RpiBleClient::_parseCommandsInfo(const char* json)
+{
+    cJSON* root = cJSON_Parse(json);
+    if (!root) return;
+
+    _commands.clear();
+    int count = cJSON_GetArraySize(root);
+    for (int i = 0; i < count; i++) {
+        cJSON* obj = cJSON_GetArrayItem(root, i);
+        if (!obj) continue;
+        RpiCommandInfo ci;
+        cJSON* item = cJSON_GetObjectItem(obj, "name");
+        if (item && cJSON_IsString(item)) ci.name = item->valuestring;
+        item = cJSON_GetObjectItem(obj, "state");
+        if (item && cJSON_IsString(item)) ci.state = item->valuestring;
+        item = cJSON_GetObjectItem(obj, "exit_code");
+        if (item) ci.exitCode = (int)cJSON_GetNumberValue(item);
+        _commands.push_back(ci);
+    }
 
     cJSON_Delete(root);
 }
