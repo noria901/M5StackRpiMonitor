@@ -440,9 +440,9 @@ void RpiMonitorGui::drawServices(const RpiBleClient& ble, int selectedIndex, boo
         snprintf(msg, sizeof(msg), "%s %s?", action, svc.name.c_str());
         _drawCenteredText(y, msg, COL_WARN, &fonts::Font0);
         y += 14;
-        _drawCenteredText(y, "Rotate=Cancel  Press=OK", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(y, "Tap top=Cancel  Center=OK", COL_TEXT_DIM, &fonts::Font0);
     } else {
-        _drawCenteredText(y, "Rotate=Scroll  Press=Toggle", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(y, "Tap top/bottom=Scroll  Center=Select", COL_TEXT_DIM, &fonts::Font0);
     }
 }
 
@@ -479,9 +479,9 @@ void RpiMonitorGui::drawPowerMenu(int selectedIndex, bool confirmMode)
         snprintf(msg, sizeof(msg), "%s?", items[selectedIndex]);
         _drawCenteredText(msgY, msg, COL_BAD, &fonts::Font2);
         msgY += 20;
-        _drawCenteredText(msgY, "Rotate=Cancel  Press=Confirm", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(msgY, "Tap top=Cancel  Center=Confirm", COL_TEXT_DIM, &fonts::Font0);
     } else {
-        _drawCenteredText(msgY, "Rotate=Select  Press=Confirm", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(msgY, "Tap to select  Center=Confirm", COL_TEXT_DIM, &fonts::Font0);
     }
 }
 
@@ -540,9 +540,9 @@ void RpiMonitorGui::drawCommands(const RpiBleClient& ble, int selectedIndex, boo
         snprintf(msg, sizeof(msg), "%s '%s'?", action, cmd.name.c_str());
         _drawCenteredText(y, msg, COL_WARN, &fonts::Font0);
         y += 14;
-        _drawCenteredText(y, "Rotate=Cancel  Press=OK", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(y, "Tap top=Cancel  Center=OK", COL_TEXT_DIM, &fonts::Font0);
     } else {
-        _drawCenteredText(y, "Rotate=Scroll  Press=Execute", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(y, "Tap top/bottom=Scroll  Center=Run", COL_TEXT_DIM, &fonts::Font0);
     }
 }
 
@@ -617,7 +617,7 @@ void RpiMonitorGui::drawSettings(bool soundEnabled)
                   soundEnabled ? COL_GOOD : COL_BAD);
 
     y += 30;
-    _drawCenteredText(y, "Press to toggle sound", COL_TEXT_DIM, &fonts::Font0);
+    _drawCenteredText(y, "Tap center to toggle", COL_TEXT_DIM, &fonts::Font0);
 
     // Alert thresholds (info display)
     y += 30;
@@ -635,109 +635,6 @@ void RpiMonitorGui::drawSettings(bool soundEnabled)
     _drawKeyValue(y, "RAM:", "90%", COL_TEXT);
     y += 14;
     _drawKeyValue(y, "Disk:", "95%", COL_TEXT);
-}
-
-// ---- Registration Screen ----
-
-void RpiMonitorGui::drawRegistration(const RpiBleClient& ble, int selectedDevice,
-                                      bool confirmMode)
-{
-    _drawTitle("Register");
-
-    auto* c = _hal->canvas;
-    BleState state = ble.getState();
-
-    if (state == BleState::CONNECTED) {
-        int y = 80;
-        _drawCenteredText(y, "Connected", COL_GOOD, &fonts::Font2);
-        y += 24;
-        _drawCenteredText(y, ble.getSavedServerName().c_str(), COL_ACCENT, &fonts::Font2);
-        y += 36;
-        _drawCenteredText(y, "Press to disconnect", COL_TEXT_DIM, &fonts::Font0);
-        return;
-    }
-
-    if (state == BleState::SCANNING) {
-        _drawCenteredText(100, "Scanning...", COL_ACCENT, &fonts::Font2);
-
-        // Spinning animation dots
-        unsigned long ms = (unsigned long)(esp_timer_get_time() / 1000);
-        int dotIdx = (ms / 300) % 4;
-        for (int i = 0; i < 4; i++) {
-            uint16_t col = (i == dotIdx) ? COL_ACCENT : COL_TEXT_DIM;
-            c->fillCircle(CENTER_X - 24 + i * 16, 130, 3, col);
-        }
-        return;
-    }
-
-    if (state == BleState::CONNECTING) {
-        _drawCenteredText(100, "Connecting...", COL_WARN, &fonts::Font2);
-        return;
-    }
-
-    int count = ble.getFoundDeviceCount();
-    if (count == 0) {
-        int y = 80;
-        _drawCenteredText(y, "No devices", COL_TEXT_DIM, &fonts::Font2);
-        y += 30;
-        _drawCenteredText(y, "Press button to", COL_TEXT_DIM, &fonts::Font0);
-        y += 14;
-        _drawCenteredText(y, "scan for RPi", COL_TEXT_DIM, &fonts::Font0);
-
-        // Draw scan icon (circle with waves)
-        y += 24;
-        c->drawCircle(CENTER_X, y + 8, 8, COL_ACCENT);
-        c->drawArc(CENTER_X, y + 8, 16, 14, 300, 60, COL_ACCENT);
-        c->drawArc(CENTER_X, y + 8, 24, 22, 310, 50, COL_ACCENT);
-        return;
-    }
-
-    // Device list
-    int y = CONTENT_START_Y;
-    int maxVisible = 4;
-    c->setFont(&fonts::Font0);
-
-    for (int i = 0; i < count && i < maxVisible; i++) {
-        bool selected = (i == selectedDevice);
-        int rowY = y + i * 22;
-
-        if (selected) {
-            // Highlight selected row
-            c->fillRoundRect(TEXT_LEFT - 4, rowY - 3, TEXT_RIGHT - TEXT_LEFT + 8, 20,
-                             4, COL_HIGHLIGHT);
-            c->setTextColor(COL_TEXT);
-        } else {
-            c->setTextColor(COL_TEXT_DIM);
-        }
-
-        char label[48];
-        snprintf(label, sizeof(label), "%d. %s", i + 1,
-                 ble.getFoundDeviceName(i).c_str());
-
-        // Truncate if too wide
-        if (c->textWidth(label) > (TEXT_RIGHT - TEXT_LEFT)) {
-            label[20] = '.';
-            label[21] = '.';
-            label[22] = '\0';
-        }
-
-        c->setCursor(TEXT_LEFT, rowY);
-        c->print(label);
-    }
-
-    // Confirm dialog
-    y = y + maxVisible * 22 + 8;
-    if (confirmMode) {
-        c->setFont(&fonts::Font0);
-
-        char msg[48];
-        snprintf(msg, sizeof(msg), "Connect to #%d?", selectedDevice + 1);
-        _drawCenteredText(y, msg, COL_WARN, &fonts::Font0);
-        y += 16;
-        _drawCenteredText(y, "Rotate=Cancel  Press=OK", COL_TEXT_DIM, &fonts::Font0);
-    } else {
-        _drawCenteredText(y, "Rotate=Scroll  Press=Select", COL_TEXT_DIM, &fonts::Font0);
-    }
 }
 
 // ---- Disconnected Overlay ----
@@ -766,11 +663,11 @@ void RpiMonitorGui::drawDisconnectedOverlay(bool hasSavedServer, const char* ser
         dots[dotCount] = '\0';
         _drawCenteredText(120, dots, COL_ACCENT, &fonts::Font2);
 
-        _drawCenteredText(145, "Press to cancel", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(145, "Tap to cancel", COL_TEXT_DIM, &fonts::Font0);
     } else {
         _drawCenteredText(80, "Disconnected", COL_TEXT_DIM, &fonts::Font2);
-        _drawCenteredText(110, "Go to Register", COL_TEXT_DIM, &fonts::Font0);
-        _drawCenteredText(124, "screen to connect", COL_TEXT_DIM, &fonts::Font0);
-        _drawCenteredText(150, "Rotate encoder", COL_ACCENT, &fonts::Font0);
+        _drawCenteredText(110, "Use BLE Scanner app", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(124, "to pair a device", COL_TEXT_DIM, &fonts::Font0);
+        _drawCenteredText(150, "Button = Exit", COL_ACCENT, &fonts::Font0);
     }
 }

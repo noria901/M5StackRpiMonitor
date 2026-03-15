@@ -5,6 +5,27 @@
 
 using namespace MOONCAKE::USER_APP;
 
+// ============================================================
+// M5Dial RPi Monitor - Input Mapping
+// ============================================================
+//
+//  Input               Action
+//  ------------------  ----------------------------------------
+//  Encoder rotate      Always: switch screens (CW=next, CCW=prev)
+//  Button press        Always: exit app (back to launcher)
+//  Touch center        Confirm / action (screen-dependent)
+//  Touch upper half    List screens: scroll up
+//  Touch lower half    List screens: scroll down
+//
+// Screen types:
+//  - Display screens (Dashboard..System, QR Code):
+//      touch center = force data refresh
+//  - List screens (Services, Power, Commands):
+//      touch center = select/confirm, touch top/bottom = scroll
+//  - Settings:
+//      touch center = toggle sound
+// ============================================================
+
 void RpiMonitor::onSetup()
 {
     setAppName("RPi Monitor");
@@ -25,13 +46,7 @@ void RpiMonitor::onCreate()
     _gui.init(_data.hal);
     _loadSettings();
 
-    // If a saved server exists, start on Dashboard for auto-reconnect
-    if (_ble.hasSavedServer()) {
-        _currentScreen = Screen::DASHBOARD;
-    } else {
-        _currentScreen = Screen::REGISTRATION;
-    }
-
+    _currentScreen = Screen::DASHBOARD;
     _needsRedraw = true;
     ESP_LOGI(_tag, "RpiMonitor created");
 }
@@ -111,22 +126,16 @@ void RpiMonitor::onRunning()
             case Screen::SETTINGS:
                 _gui.drawSettings(_soundEnabled);
                 break;
-            case Screen::REGISTRATION:
-                _gui.drawRegistration(_ble, _regSelectedDevice, _regConfirmMode);
-                break;
             default:
                 break;
         }
 
-        // Draw page indicator dots (skip for Registration)
-        if (_currentScreen != Screen::REGISTRATION) {
-            _gui.drawPageIndicator(screenIdx, SCREEN_COUNT - 1);  // -1 to exclude Registration
-        }
+        // Page indicator dots
+        _gui.drawPageIndicator(screenIdx, SCREEN_COUNT);
 
-        // Show disconnected overlay on data screens only
-        // (skip Registration, Settings, QR Code - they work without connection)
+        // Disconnected overlay on data/action screens
+        // (skip Settings, QR Code - they work without connection)
         if (_ble.getState() != BleState::CONNECTED &&
-            _currentScreen != Screen::REGISTRATION &&
             _currentScreen != Screen::SETTINGS &&
             _currentScreen != Screen::QR_CODE)
         {
@@ -145,8 +154,11 @@ void RpiMonitor::onDestroy()
     ESP_LOGI(_tag, "RpiMonitor destroyed");
 }
 
-// --- Input Handlers ---
+// ============================================================
+// Input Handlers
+// ============================================================
 
+// Encoder rotation: ALWAYS switch screens
 void RpiMonitor::_handleEncoder()
 {
     if (!_data.hal->encoder.wasMoved(true)) return;
@@ -158,50 +170,97 @@ void RpiMonitor::_handleEncoder()
     int dir = _data.hal->encoder.getDirection();
     // dir < 1 = CW (next), dir >= 1 = CCW (prev)
 
-    // List screens: encoder scrolls items within the list
-    // All other screens: encoder switches between screens
-    switch (_currentScreen) {
-        case Screen::REGISTRATION:
-            if (dir < 1) _registrationScrollDown(_ble.getFoundDeviceCount());
-            else         _registrationScrollUp();
-            break;
-        case Screen::SERVICES:
-            if (dir < 1) _listScrollDown(_svcSelectedIndex, _svcConfirmMode, _ble.getServiceCount());
-            else         _listScrollUp(_svcSelectedIndex, _svcConfirmMode);
-            break;
-        case Screen::POWER_MENU:
-            if (dir < 1) _listScrollDown(_pwrSelectedIndex, _pwrConfirmMode, 2);
-            else         _listScrollUp(_pwrSelectedIndex, _pwrConfirmMode);
-            break;
-        case Screen::COMMANDS:
-            if (dir < 1) _listScrollDown(_cmdSelectedIndex, _cmdConfirmMode, _ble.getCommandCount());
-            else         _listScrollUp(_cmdSelectedIndex, _cmdConfirmMode);
-            break;
-        default:
-            // Display / settings screens: encoder navigates between screens
-            if (dir < 1) _nextScreen();
-            else         _prevScreen();
-            break;
-    }
+    if (dir < 1) _nextScreen();
+    else         _prevScreen();
 
-    // Buzzer feedback
     _data.hal->buzz.tone(4000, 20);
-
     _needsRedraw = true;
 }
 
+// Button press: ALWAYS exit app (back to launcher)
 void RpiMonitor::_handleButton()
 {
     if (!_data.hal->encoder.btn.pressed()) return;
 
-    unsigned long now = (unsigned long)(esp_timer_get_time() / 1000);
-    if (now - _lastButtonPress < BUTTON_DEBOUNCE_MS) return;
-    _lastButtonPress = now;
+    _data.hal->buzz.tone(4000, 20);
+    destroyApp();
+}
 
+// Touch: center = action, upper/lower = scroll on list screens
+void RpiMonitor::_handleTouch()
+{
+    if (!_data.hal->tp.isTouched()) return;
+
+    unsigned long now = (unsigned long)(esp_timer_get_time() / 1000);
+    if (now - _lastTouchAction < TOUCH_DEBOUNCE_MS) return;
+
+    _data.hal->tp.update();
+    auto point = _data.hal->tp.getTouchPointBuffer();
+
+    // Calculate distance and angle from center (120, 120)
+    int dx = point.x - 120;
+    int dy = point.y - 120;
+    float dist = sqrtf(dx * dx + dy * dy);
+
+    if (dist < 45) {
+        // --- Center tap: confirm / action ---
+        _lastTouchAction = now;
+        _touchAction();
+        _data.hal->buzz.tone(4000, 20);
+        _needsRedraw = true;
+    } else if (dist < 110 && _isListScreen()) {
+        // --- Outer ring on list screens: scroll up/down ---
+        _lastTouchAction = now;
+        if (dy < 0) {
+            _touchScrollUp();   // upper half
+        } else {
+            _touchScrollDown(); // lower half
+        }
+        _data.hal->buzz.tone(4000, 20);
+        _needsRedraw = true;
+    }
+}
+
+// ============================================================
+// Screen Navigation
+// ============================================================
+
+void RpiMonitor::_nextScreen()
+{
+    int next = (static_cast<int>(_currentScreen) + 1) % SCREEN_COUNT;
+    _currentScreen = static_cast<Screen>(next);
+    _resetConfirmModes();
+}
+
+void RpiMonitor::_prevScreen()
+{
+    int prev = (static_cast<int>(_currentScreen) - 1 + SCREEN_COUNT) % SCREEN_COUNT;
+    _currentScreen = static_cast<Screen>(prev);
+    _resetConfirmModes();
+}
+
+void RpiMonitor::_resetConfirmModes()
+{
+    _svcConfirmMode = false;
+    _pwrConfirmMode = false;
+    _cmdConfirmMode = false;
+}
+
+bool RpiMonitor::_isListScreen() const
+{
+    return _currentScreen == Screen::SERVICES ||
+           _currentScreen == Screen::POWER_MENU ||
+           _currentScreen == Screen::COMMANDS;
+}
+
+// ============================================================
+// Touch Actions
+// ============================================================
+
+// Touch center: screen-specific action
+void RpiMonitor::_touchAction()
+{
     switch (_currentScreen) {
-        case Screen::REGISTRATION:
-            _registrationAction();
-            break;
         case Screen::SERVICES:
             _servicesAction();
             break;
@@ -215,170 +274,71 @@ void RpiMonitor::_handleButton()
             _settingsAction();
             break;
         default:
-            // Display screens: button forces data refresh or exits app
+            // Display screens: force data refresh
             if (_ble.getState() == BleState::CONNECTED) {
                 _ble.readAll();
                 _lastDataUpdate = (unsigned long)(esp_timer_get_time() / 1000);
-            } else if (!_ble.hasSavedServer()) {
-                destroyApp();
-                return;
             }
             break;
     }
-
-    _data.hal->buzz.tone(4000, 20);
-    _needsRedraw = true;
 }
 
-void RpiMonitor::_handleTouch()
+// Touch upper half on list screens: scroll up / cancel confirm
+void RpiMonitor::_touchScrollUp()
 {
-    if (!_data.hal->tp.isTouched()) return;
-
-    _data.hal->tp.update();
-    auto point = _data.hal->tp.getTouchPointBuffer();
-
-    // Calculate distance from center (120, 120)
-    int dx = point.x - 120;
-    int dy = point.y - 120;
-    float dist = sqrtf(dx * dx + dy * dy);
-
-    // Center tap (r < 50) acts like button press
-    if (dist < 50) {
-        unsigned long now = (unsigned long)(esp_timer_get_time() / 1000);
-        if (now - _lastButtonPress < BUTTON_DEBOUNCE_MS) return;
-        _lastButtonPress = now;
-
-        // Center tap = same as button press (reuse _handleButton logic)
-        switch (_currentScreen) {
-            case Screen::REGISTRATION:  _registrationAction(); break;
-            case Screen::SERVICES:      _servicesAction(); break;
-            case Screen::POWER_MENU:    _powerAction(); break;
-            case Screen::COMMANDS:      _commandsAction(); break;
-            case Screen::SETTINGS:      _settingsAction(); break;
-            default:
-                if (_ble.getState() == BleState::CONNECTED) {
-                    _ble.readAll();
-                    _lastDataUpdate = now;
-                }
-                break;
-        }
-        _data.hal->buzz.tone(4000, 20);
-        _needsRedraw = true;
+    switch (_currentScreen) {
+        case Screen::SERVICES:
+            if (_svcConfirmMode) _svcConfirmMode = false;
+            else if (_svcSelectedIndex > 0) _svcSelectedIndex--;
+            break;
+        case Screen::POWER_MENU:
+            if (_pwrConfirmMode) _pwrConfirmMode = false;
+            else if (_pwrSelectedIndex > 0) _pwrSelectedIndex--;
+            break;
+        case Screen::COMMANDS:
+            if (_cmdConfirmMode) _cmdConfirmMode = false;
+            else if (_cmdSelectedIndex > 0) _cmdSelectedIndex--;
+            break;
+        default:
+            break;
     }
 }
 
-// --- Screen Navigation ---
-
-void RpiMonitor::_nextScreen()
+// Touch lower half on list screens: scroll down
+void RpiMonitor::_touchScrollDown()
 {
-    int next = (static_cast<int>(_currentScreen) + 1) % SCREEN_COUNT;
-    _currentScreen = static_cast<Screen>(next);
-    _regConfirmMode = false;
-    _svcConfirmMode = false;
-    _pwrConfirmMode = false;
-    _cmdConfirmMode = false;
-}
-
-void RpiMonitor::_prevScreen()
-{
-    int prev = (static_cast<int>(_currentScreen) - 1 + SCREEN_COUNT) % SCREEN_COUNT;
-    _currentScreen = static_cast<Screen>(prev);
-    _regConfirmMode = false;
-    _svcConfirmMode = false;
-    _pwrConfirmMode = false;
-    _cmdConfirmMode = false;
-}
-
-// --- Registration Actions ---
-
-void RpiMonitor::_registrationAction()
-{
-    if (_ble.getState() == BleState::CONNECTED) {
-        // Already connected: forget device (disconnect + clear NVS)
-        _ble.forgetDevice();
-        _needsRedraw = true;
-        return;
-    }
-
-    if (_ble.getState() == BleState::SCANNING) {
-        return;  // scan in progress, ignore
-    }
-
-    int count = _ble.getFoundDeviceCount();
-    if (count == 0) {
-        // No devices found: start scan
-        _ble.startScan();
-        _needsRedraw = true;
-        return;
-    }
-
-    if (_regConfirmMode) {
-        // Confirm mode: connect to selected device
-        if (_regSelectedDevice >= 0 && _regSelectedDevice < count) {
-            _ble.connectToDevice(_regSelectedDevice);
-            if (_ble.getState() == BleState::CONNECTED) {
-                _ble.sendRegistration("M5Dial-RpiMon");
-                _currentScreen = Screen::DASHBOARD;
-            }
-        }
-        _regConfirmMode = false;
-    } else {
-        // Enter confirm mode
-        _regConfirmMode = true;
-    }
-    _needsRedraw = true;
-}
-
-void RpiMonitor::_registrationScrollUp()
-{
-    if (_regConfirmMode) {
-        _regConfirmMode = false;  // cancel confirm
-    } else if (_regSelectedDevice > 0) {
-        _regSelectedDevice--;
+    switch (_currentScreen) {
+        case Screen::SERVICES:
+            if (!_svcConfirmMode && _svcSelectedIndex < _ble.getServiceCount() - 1)
+                _svcSelectedIndex++;
+            break;
+        case Screen::POWER_MENU:
+            if (!_pwrConfirmMode && _pwrSelectedIndex < 1)
+                _pwrSelectedIndex++;
+            break;
+        case Screen::COMMANDS:
+            if (!_cmdConfirmMode && _cmdSelectedIndex < _ble.getCommandCount() - 1)
+                _cmdSelectedIndex++;
+            break;
+        default:
+            break;
     }
 }
 
-void RpiMonitor::_registrationScrollDown(int deviceCount)
-{
-    if (!_regConfirmMode && _regSelectedDevice < deviceCount - 1) {
-        _regSelectedDevice++;
-    }
-}
-
-// --- List Screen Helpers ---
-
-void RpiMonitor::_listScrollUp(int& selectedIndex, bool& confirmMode)
-{
-    if (confirmMode) {
-        confirmMode = false;
-    } else if (selectedIndex > 0) {
-        selectedIndex--;
-    }
-}
-
-void RpiMonitor::_listScrollDown(int& selectedIndex, bool& confirmMode, int count)
-{
-    if (!confirmMode && selectedIndex < count - 1) {
-        selectedIndex++;
-    }
-}
-
-// --- Services Action ---
+// ============================================================
+// Screen-Specific Actions (called by touch center)
+// ============================================================
 
 void RpiMonitor::_servicesAction()
 {
     if (_ble.getState() != BleState::CONNECTED) return;
-
-    int count = _ble.getServiceCount();
-    if (count == 0) return;
+    if (_ble.getServiceCount() == 0) return;
 
     if (_svcConfirmMode) {
-        // Execute toggle
         auto& svc = _ble.getServiceInfo(_svcSelectedIndex);
         const char* action = svc.active ? "stop" : "start";
         _ble.sendServiceControl(svc.name.c_str(), action);
         _svcConfirmMode = false;
-        // Refresh data after a short delay
         vTaskDelay(pdMS_TO_TICKS(500));
         _ble.readAll();
         _lastDataUpdate = (unsigned long)(esp_timer_get_time() / 1000);
@@ -387,8 +347,6 @@ void RpiMonitor::_servicesAction()
     }
     _needsRedraw = true;
 }
-
-// --- Power Action ---
 
 void RpiMonitor::_powerAction()
 {
@@ -404,14 +362,10 @@ void RpiMonitor::_powerAction()
     _needsRedraw = true;
 }
 
-// --- Commands Action ---
-
 void RpiMonitor::_commandsAction()
 {
     if (_ble.getState() != BleState::CONNECTED) return;
-
-    int count = _ble.getCommandCount();
-    if (count == 0) return;
+    if (_ble.getCommandCount() == 0) return;
 
     if (_cmdConfirmMode) {
         auto& cmd = _ble.getCommandInfo(_cmdSelectedIndex);
@@ -427,8 +381,6 @@ void RpiMonitor::_commandsAction()
     _needsRedraw = true;
 }
 
-// --- Settings Action ---
-
 void RpiMonitor::_settingsAction()
 {
     _soundEnabled = !_soundEnabled;
@@ -439,7 +391,9 @@ void RpiMonitor::_settingsAction()
     _needsRedraw = true;
 }
 
-// --- NVS Settings ---
+// ============================================================
+// NVS Settings
+// ============================================================
 
 void RpiMonitor::_loadSettings()
 {
