@@ -2,6 +2,8 @@
 
 M5Stack Core を使った Raspberry Pi ステータスモニター。RPi上の常駐デーモンがBLE経由でシステム情報をM5Stackに送信し、リアルタイムで表示します。
 
+**GitHub Pages**: https://noria901.github.io/M5StackRpiMonitor/
+
 ## Features
 
 **M5Stack側 (BLE Client)**
