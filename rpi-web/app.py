@@ -285,7 +285,9 @@ def _run_shell_with_idf(shell_cmd: str, cwd: str, log_fn) -> int:
     if not export_sh:
         log_fn("Error: ESP-IDF export.sh not found")
         return 1
-    full_cmd = f'. "{export_sh}" > /dev/null 2>&1 && {shell_cmd}'
+    log_fn(f"Sourcing {export_sh} ...")
+    # Show export.sh output so the user can see environment setup progress
+    full_cmd = f'. "{export_sh}" && {shell_cmd}'
     proc = subprocess.Popen(
         ["bash", "-c", full_cmd],
         cwd=cwd,
