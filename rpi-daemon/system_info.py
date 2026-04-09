@@ -406,6 +406,153 @@ class CommandRunner:
         return {"status": "ok"}
 
 
+def scan_wifi_networks() -> list[dict]:
+    """Scan for available WiFi networks using nmcli."""
+    networks: list[dict] = []
+    try:
+        # Trigger a fresh scan
+        subprocess.run(
+            ["nmcli", "dev", "wifi", "rescan"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:
+        pass
+    try:
+        result = subprocess.run(
+            ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            seen: set[str] = set()
+            for line in result.stdout.strip().split("\n"):
+                if not line.strip():
+                    continue
+                parts = line.split(":")
+                if len(parts) < 3:
+                    continue
+                ssid = parts[0].strip()
+                if not ssid or ssid in seen:
+                    continue
+                seen.add(ssid)
+                signal = 0
+                try:
+                    signal = int(parts[1])
+                except ValueError:
+                    pass
+                security = parts[2].strip() if parts[2].strip() else "Open"
+                networks.append({
+                    "ssid": ssid,
+                    "signal": signal,
+                    "security": security,
+                })
+            # Sort by signal strength descending
+            networks.sort(key=lambda n: n["signal"], reverse=True)
+    except Exception:
+        pass
+    return networks
+
+
+def get_saved_wifi_connections() -> list[str]:
+    """Return list of saved WiFi connection names (profiles)."""
+    saved: list[str] = []
+    try:
+        result = subprocess.run(
+            ["nmcli", "-t", "-f", "NAME,TYPE", "con", "show"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n"):
+                parts = line.split(":")
+                if len(parts) >= 2 and "wireless" in parts[1]:
+                    saved.append(parts[0])
+    except Exception:
+        pass
+    return saved
+
+
+def wifi_connect(ssid: str, password: str = "") -> dict:
+    """Connect to a WiFi network using nmcli.
+
+    If a saved profile for the SSID exists, activates it.
+    Otherwise creates a new connection with the given password.
+    """
+    if not ssid:
+        return {"status": "error", "message": "SSID is required"}
+    try:
+        # Check if a saved connection exists for this SSID
+        saved = get_saved_wifi_connections()
+        if ssid in saved and not password:
+            # Activate existing profile
+            result = subprocess.run(
+                ["nmcli", "con", "up", ssid],
+                capture_output=True, text=True, timeout=30,
+            )
+        else:
+            # Connect with password (creates or updates profile)
+            cmd = ["nmcli", "dev", "wifi", "connect", ssid]
+            if password:
+                cmd += ["password", password]
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=30,
+            )
+        if result.returncode == 0:
+            return {"status": "ok"}
+        return {"status": "error", "message": result.stderr.strip() or "Connection failed"}
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "message": "Connection timed out"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def wifi_disconnect() -> dict:
+    """Disconnect from the current WiFi network."""
+    wifi_iface = detect_wifi_interface()
+    try:
+        result = subprocess.run(
+            ["nmcli", "dev", "disconnect", wifi_iface],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            return {"status": "ok"}
+        return {"status": "error", "message": result.stderr.strip()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def wifi_forget(ssid: str) -> dict:
+    """Delete a saved WiFi connection profile."""
+    if not ssid:
+        return {"status": "error", "message": "SSID is required"}
+    try:
+        result = subprocess.run(
+            ["nmcli", "con", "delete", ssid],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            return {"status": "ok"}
+        return {"status": "error", "message": result.stderr.strip()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def get_wifi_status() -> dict:
+    """Get current WiFi connection status and saved networks."""
+    current_ssid = ""
+    try:
+        result = subprocess.run(
+            ["iwgetid", "-r"], capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            current_ssid = result.stdout.strip()
+    except Exception:
+        pass
+
+    return {
+        "current_ssid": current_ssid,
+        "saved": get_saved_wifi_connections(),
+    }
+
+
 if __name__ == "__main__":
     info = get_all_info()
     print(json.dumps(info, indent=2))

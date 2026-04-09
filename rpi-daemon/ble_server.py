@@ -21,8 +21,13 @@ from system_info import (
     get_storage_info,
     get_network_info,
     get_system_info,
+    get_wifi_status,
     load_config,
+    scan_wifi_networks,
     system_control,
+    wifi_connect,
+    wifi_disconnect,
+    wifi_forget,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +43,7 @@ CHAR_REGISTRATION_UUID = "12345678-1234-5678-1234-56789abcdef6"
 CHAR_SERVICES_UUID = "12345678-1234-5678-1234-56789abcdef7"
 CHAR_SYSTEM_CTRL_UUID = "12345678-1234-5678-1234-56789abcdef8"
 CHAR_COMMANDS_UUID = "12345678-1234-5678-1234-56789abcdef9"
+CHAR_WIFI_UUID = "12345678-1234-5678-1234-56789abcdefa"
 
 BLUEZ_SERVICE = "org.bluez"
 LE_ADVERTISING_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
@@ -301,6 +307,55 @@ class CommandsCharacteristic(Characteristic):
             self.set_value(json.dumps({"status": "error", "message": str(e)}))
 
 
+class WifiCharacteristic(Characteristic):
+    """BLE characteristic for WiFi STA configuration."""
+
+    def __init__(self, path: str):
+        super().__init__(CHAR_WIFI_UUID, ["read", "write"], path)
+        # Initialize with current status
+        self.update()
+
+    def update(self):
+        self.set_value(json.dumps(get_wifi_status()))
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        data = bytes(value).decode("utf-8")
+        logger.info(f"WiFi config request: {data}")
+        try:
+            req = json.loads(data)
+            action = req.get("action", "")
+            if action == "scan":
+                networks = scan_wifi_networks()
+                status = get_wifi_status()
+                status["networks"] = networks
+                self.set_value(json.dumps(status))
+            elif action == "connect":
+                ssid = req.get("ssid", "")
+                password = req.get("password", "")
+                result = wifi_connect(ssid, password)
+                self.set_value(json.dumps(result))
+            elif action == "disconnect":
+                result = wifi_disconnect()
+                self.set_value(json.dumps(result))
+            elif action == "forget":
+                ssid = req.get("ssid", "")
+                result = wifi_forget(ssid)
+                self.set_value(json.dumps(result))
+            else:
+                self.set_value(json.dumps({
+                    "status": "error",
+                    "message": f"invalid action '{action}'",
+                }))
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"WiFi config error: {e}")
+            self.set_value(json.dumps({"status": "error", "message": str(e)}))
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        return bytes(self._value)
+
+
 class GattService(ServiceInterface):
     """GATT Service definition."""
 
@@ -369,6 +424,7 @@ class BLEServer:
         svc_char = ServicesCharacteristic(f"{service_path}/char6", config)
         sysctrl_char = SystemControlCharacteristic(f"{service_path}/char7")
         cmd_char = CommandsCharacteristic(f"{service_path}/char8", cmd_runner)
+        wifi_char = WifiCharacteristic(f"{service_path}/char9")
 
         self.characteristics = [
             cpu_char,
@@ -380,6 +436,7 @@ class BLEServer:
             svc_char,
             sysctrl_char,
             cmd_char,
+            wifi_char,
         ]
 
         # Export objects on D-Bus
