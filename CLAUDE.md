@@ -41,6 +41,7 @@ M5Stack Core / M5Dial を使った Raspberry Pi / Jetson Orin ステータスモ
   - System Control: `12345678-1234-5678-1234-56789abcdef8` (Read/Write)
   - Commands: `12345678-1234-5678-1234-56789abcdef9` (Read/Write)
   - ROS2: `12345678-1234-5678-1234-56789abcdefa` (Read/Notify)
+  - WiFi Config: `12345678-1234-5678-1234-56789abcdefb` (Read/Write)
 
 ### Registration Characteristic
 - **Write**: M5Stackが登録リクエストを送信
@@ -106,6 +107,32 @@ M5Stack Core / M5Dial を使った Raspberry Pi / Jetson Orin ステータスモ
   {"ros2_setup_script": "/opt/ros/humble/setup.bash"}
   ```
   - デフォルト: `/opt/ros/humble/setup.bash`
+
+### WiFi Config Characteristic
+- **Read**: 現在のWiFi接続状態と保存済みネットワーク一覧
+  ```json
+  {"current_ssid": "MyNetwork", "saved": ["MyNetwork", "OtherNet"]}
+  ```
+- **Write**: WiFiスキャン・接続・切断・削除コマンド
+  ```json
+  {"action": "scan"}
+  {"action": "connect", "ssid": "NetworkName", "password": "pass123"}
+  {"action": "disconnect"}
+  {"action": "forget", "ssid": "NetworkName"}
+  ```
+- **Read** (scan後): スキャン結果を含むレスポンス
+  ```json
+  {
+    "current_ssid": "MyNetwork",
+    "saved": ["MyNetwork"],
+    "networks": [
+      {"ssid": "Network1", "signal": 85, "security": "WPA2"},
+      {"ssid": "OpenNet", "signal": 42, "security": "Open"}
+    ]
+  }
+  ```
+- NetworkManager (`nmcli`) を使用してWiFi管理を実行
+- GitHub Pages Web BLE ダッシュボードからのみ操作可能
 
 ## BLE OTA Update (ファームウェアリモート更新)
 開発PCからM5DialにBLE経由でファームウェアをリモート配信する仕組み。
@@ -292,6 +319,20 @@ JSON encoded UTF-8 strings (max 512 bytes per characteristic):
 
 // ROS2 (Read: RPi→M5Stack)
 {"nodes": ["/node1", "/node2"], "topics": ["/topic1"], "n_total": 5, "t_total": 3, "active": true}
+
+// WiFi Config (Read: RPi→M5Stack)
+{"current_ssid": "MyNetwork", "saved": ["MyNetwork"]}
+
+// WiFi Config (Write: scan)
+{"action": "scan"}
+
+// WiFi Config (Read after scan)
+{"current_ssid": "MyNetwork", "saved": ["MyNetwork"], "networks": [{"ssid": "Net1", "signal": 85, "security": "WPA2"}]}
+
+// WiFi Config (Write: connect/disconnect/forget)
+{"action": "connect", "ssid": "Net1", "password": "pass123"}
+{"action": "disconnect"}
+{"action": "forget", "ssid": "Net1"}
 ```
 
 ## Web UI Routes

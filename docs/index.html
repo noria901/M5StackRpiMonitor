@@ -275,6 +275,111 @@
       vertical-align: middle;
     }
 
+    /* WiFi Config */
+    .wifi-controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .wifi-scan-btn {
+      padding: 0.4rem 0.8rem;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .wifi-scan-btn:hover { opacity: 0.85; }
+    .wifi-scan-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .wifi-current {
+      font-size: 0.85rem;
+      color: var(--green);
+      margin-bottom: 0.5rem;
+    }
+    .wifi-saved {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+    .wifi-saved-tag {
+      display: inline-block;
+      background: var(--border);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      margin: 0.15rem 0.15rem 0.15rem 0;
+      font-size: 0.7rem;
+    }
+    .wifi-net-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .wifi-net-row:last-child { border-bottom: none; }
+    .wifi-net-row:hover { background: rgba(88,166,255,0.05); }
+    .wifi-net-info { display: flex; flex-direction: column; }
+    .wifi-net-ssid { font-size: 0.9rem; }
+    .wifi-net-detail { font-size: 0.7rem; color: var(--muted); }
+    .wifi-signal-icon { font-size: 0.8rem; color: var(--muted); margin-right: 0.5rem; }
+    .wifi-connect-form {
+      display: none;
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .wifi-connect-form label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+    .wifi-connect-form input {
+      width: 100%;
+      padding: 0.4rem 0.5rem;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      margin-bottom: 0.5rem;
+    }
+    .wifi-connect-form input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .wifi-form-btns {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .wifi-form-btns button {
+      padding: 0.35rem 0.7rem;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .wifi-btn-connect { background: var(--green); color: #000; }
+    .wifi-btn-connect:disabled { opacity: 0.3; cursor: not-allowed; }
+    .wifi-btn-cancel { background: var(--border); color: var(--text); }
+    .wifi-btn-forget { background: var(--red); color: #fff; font-size: 0.7rem; padding: 0.2rem 0.5rem; }
+    .wifi-btn-forget:disabled { opacity: 0.3; cursor: not-allowed; }
+    .wifi-status-msg {
+      font-size: 0.8rem;
+      margin-top: 0.5rem;
+      min-height: 1.2em;
+    }
+    .wifi-empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
+
     footer {
       margin-top: 2rem;
       text-align: center;
@@ -442,6 +547,30 @@
       <div class="svc-empty">接続後に表示されます</div>
     </div>
   </div>
+
+  <!-- WiFi Config -->
+  <div class="card" id="card-wifi">
+    <div class="card-title">WiFi 設定</div>
+    <div id="wifi-current-info" class="wifi-current"></div>
+    <div id="wifi-saved-info" class="wifi-saved"></div>
+    <div class="wifi-controls">
+      <button class="wifi-scan-btn" id="btn-wifi-scan" disabled>ネットワークをスキャン</button>
+    </div>
+    <div id="wifi-net-list">
+      <div class="wifi-empty">接続後にスキャンしてください</div>
+    </div>
+    <div class="wifi-connect-form" id="wifi-connect-form">
+      <label>SSID</label>
+      <input type="text" id="wifi-input-ssid" readonly>
+      <label>パスワード</label>
+      <input type="password" id="wifi-input-pass" placeholder="パスワードを入力">
+      <div class="wifi-form-btns">
+        <button class="wifi-btn-connect" id="btn-wifi-connect">接続</button>
+        <button class="wifi-btn-cancel" id="btn-wifi-cancel">キャンセル</button>
+      </div>
+    </div>
+    <div id="wifi-status" class="wifi-status-msg"></div>
+  </div>
 </div>
 
 <footer style="margin-top:2rem;">
@@ -462,6 +591,7 @@ const CHAR_SERVICES = '12345678-1234-5678-1234-56789abcdef7';
 const CHAR_SYSCTL   = '12345678-1234-5678-1234-56789abcdef8';
 const CHAR_COMMANDS = '12345678-1234-5678-1234-56789abcdef9';
 const CHAR_ROS2     = '12345678-1234-5678-1234-56789abcdefa';
+const CHAR_WIFI    = '12345678-1234-5678-1234-56789abcdefb';
 
 // ---- State ----------------------------------------------------------------
 let device = null;
@@ -470,6 +600,7 @@ let servicesChar = null;
 let sysCtrlChar  = null;
 let commandsChar = null;
 let ros2Char = null;
+let wifiChar     = null;
 let cmdPollTimer = null;
 
 // ---- DOM refs -------------------------------------------------------------
@@ -829,6 +960,190 @@ async function pollCommands() {
   }
 }
 
+// ---- WiFi handler ---------------------------------------------------------
+function onWifiStatus(event) {
+  const d = decode(event.target.value);
+  const currentEl = document.getElementById('wifi-current-info');
+  const savedEl = document.getElementById('wifi-saved-info');
+
+  if (d.current_ssid) {
+    currentEl.textContent = '接続中: ' + d.current_ssid;
+    currentEl.style.color = 'var(--green)';
+  } else {
+    currentEl.textContent = '未接続';
+    currentEl.style.color = 'var(--muted)';
+  }
+
+  if (d.saved && d.saved.length > 0) {
+    savedEl.innerHTML = '保存済み: ' + d.saved.map(s =>
+      '<span class="wifi-saved-tag">' + escapeHtml(s) +
+      '<button class="wifi-btn-forget" data-ssid="' + escapeHtml(s) +
+      '" style="margin-left:0.3rem;border:none;background:transparent;color:var(--red);cursor:pointer;font-size:0.65rem;">✕</button></span>'
+    ).join('');
+    savedEl.querySelectorAll('.wifi-btn-forget').forEach(btn => {
+      btn.addEventListener('click', onWifiForget);
+    });
+  } else {
+    savedEl.textContent = '';
+  }
+
+  // ネットワーク一覧がある場合（scan結果）
+  if (d.networks) {
+    renderWifiNetworks(d.networks, d.current_ssid || '');
+  }
+  updateTimestamp();
+}
+
+function renderWifiNetworks(networks, currentSsid) {
+  const container = document.getElementById('wifi-net-list');
+  if (!Array.isArray(networks) || networks.length === 0) {
+    container.innerHTML = '<div class="wifi-empty">ネットワークが見つかりません</div>';
+    return;
+  }
+  container.innerHTML = networks.map(net => {
+    const isCurrent = net.ssid === currentSsid;
+    const sigPct = net.signal || 0;
+    let sigIcon = '\u2581';  // low
+    if (sigPct >= 70) sigIcon = '\u2584\u2587';
+    else if (sigPct >= 40) sigIcon = '\u2583\u2585';
+    else if (sigPct >= 20) sigIcon = '\u2582\u2584';
+    const connLabel = isCurrent ? ' (接続中)' : '';
+    return `<div class="wifi-net-row" data-ssid="${escapeHtml(net.ssid)}" data-security="${escapeHtml(net.security)}">
+      <div class="wifi-net-info">
+        <span class="wifi-net-ssid">${escapeHtml(net.ssid)}${connLabel}</span>
+        <span class="wifi-net-detail">${escapeHtml(net.security)} | ${sigPct}%</span>
+      </div>
+      <span class="wifi-signal-icon">${sigIcon}</span>
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('.wifi-net-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const ssid = row.dataset.ssid;
+      const security = row.dataset.security;
+      showWifiConnectForm(ssid, security);
+    });
+  });
+}
+
+function showWifiConnectForm(ssid, security) {
+  const form = document.getElementById('wifi-connect-form');
+  const ssidInput = document.getElementById('wifi-input-ssid');
+  const passInput = document.getElementById('wifi-input-pass');
+  ssidInput.value = ssid;
+  passInput.value = '';
+  if (security === 'Open' || security === '' || security === '--') {
+    passInput.style.display = 'none';
+    passInput.previousElementSibling.style.display = 'none';
+  } else {
+    passInput.style.display = '';
+    passInput.previousElementSibling.style.display = '';
+  }
+  form.style.display = 'block';
+  if (passInput.style.display !== 'none') passInput.focus();
+}
+
+function setupWifi() {
+  const scanBtn = document.getElementById('btn-wifi-scan');
+  const connectBtn = document.getElementById('btn-wifi-connect');
+  const cancelBtn = document.getElementById('btn-wifi-cancel');
+  const statusEl = document.getElementById('wifi-status');
+
+  scanBtn.addEventListener('click', async () => {
+    if (!wifiChar) return;
+    scanBtn.disabled = true;
+    scanBtn.textContent = 'スキャン中...';
+    statusEl.textContent = '';
+    try {
+      const cmd = JSON.stringify({ action: 'scan' });
+      await wifiChar.writeValue(new TextEncoder().encode(cmd));
+      await new Promise(r => setTimeout(r, 3000));
+      const value = await wifiChar.readValue();
+      onWifiStatus({ target: { value } });
+    } catch (err) {
+      statusEl.textContent = 'スキャンエラー: ' + err.message;
+      statusEl.style.color = 'var(--red)';
+    }
+    scanBtn.disabled = false;
+    scanBtn.textContent = 'ネットワークをスキャン';
+  });
+
+  connectBtn.addEventListener('click', async () => {
+    if (!wifiChar) return;
+    const ssid = document.getElementById('wifi-input-ssid').value;
+    const pass = document.getElementById('wifi-input-pass').value;
+    if (!ssid) return;
+    connectBtn.disabled = true;
+    statusEl.textContent = ssid + ' に接続中...';
+    statusEl.style.color = 'var(--muted)';
+    try {
+      const cmd = JSON.stringify({ action: 'connect', ssid, password: pass });
+      await wifiChar.writeValue(new TextEncoder().encode(cmd));
+      await new Promise(r => setTimeout(r, 2000));
+      const value = await wifiChar.readValue();
+      const result = decode(value);
+      if (result.status === 'ok') {
+        statusEl.textContent = ssid + ' に接続しました';
+        statusEl.style.color = 'var(--green)';
+        document.getElementById('wifi-connect-form').style.display = 'none';
+        // ステータス更新
+        await new Promise(r => setTimeout(r, 1000));
+        const cmd2 = JSON.stringify({ action: 'scan' });
+        await wifiChar.writeValue(new TextEncoder().encode(cmd2));
+        await new Promise(r => setTimeout(r, 2000));
+        const v2 = await wifiChar.readValue();
+        onWifiStatus({ target: { value: v2 } });
+      } else {
+        statusEl.textContent = 'エラー: ' + (result.message || '接続失敗');
+        statusEl.style.color = 'var(--red)';
+      }
+    } catch (err) {
+      statusEl.textContent = 'エラー: ' + err.message;
+      statusEl.style.color = 'var(--red)';
+    }
+    connectBtn.disabled = false;
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    document.getElementById('wifi-connect-form').style.display = 'none';
+    statusEl.textContent = '';
+  });
+}
+
+async function onWifiForget(e) {
+  e.stopPropagation();
+  const ssid = e.currentTarget.dataset.ssid;
+  if (!wifiChar || !ssid) return;
+  const statusEl = document.getElementById('wifi-status');
+  if (!confirm(ssid + ' の接続情報を削除しますか？')) return;
+  try {
+    const cmd = JSON.stringify({ action: 'forget', ssid });
+    await wifiChar.writeValue(new TextEncoder().encode(cmd));
+    await new Promise(r => setTimeout(r, 500));
+    const value = await wifiChar.readValue();
+    const result = decode(value);
+    if (result.status === 'ok') {
+      statusEl.textContent = ssid + ' を削除しました';
+      statusEl.style.color = 'var(--green)';
+      // ステータス再取得
+      await new Promise(r => setTimeout(r, 500));
+      const cmd2 = JSON.stringify({ action: 'scan' });
+      await wifiChar.writeValue(new TextEncoder().encode(cmd2));
+      await new Promise(r => setTimeout(r, 2000));
+      const v2 = await wifiChar.readValue();
+      onWifiStatus({ target: { value: v2 } });
+    } else {
+      statusEl.textContent = 'エラー: ' + (result.message || '削除失敗');
+      statusEl.style.color = 'var(--red)';
+    }
+  } catch (err) {
+    statusEl.textContent = 'エラー: ' + err.message;
+    statusEl.style.color = 'var(--red)';
+  }
+}
+
+setupWifi();
+
 // ---- Subscribe helper -----------------------------------------------------
 async function subscribe(service, uuid, handler) {
   const char = await service.getCharacteristic(uuid);
@@ -888,6 +1203,17 @@ async function connect() {
       ros2Char = null;
     }
 
+    // WiFi Config (read/write; store ref)
+    try {
+      wifiChar = await service.getCharacteristic(CHAR_WIFI);
+      const wifiValue = await wifiChar.readValue();
+      onWifiStatus({ target: { value: wifiValue } });
+      document.getElementById('btn-wifi-scan').disabled = false;
+    } catch (err) {
+      console.warn('WiFi characteristic not available:', err.message);
+      wifiChar = null;
+    }
+
     setStatus('connected', device.name + ' に接続中');
     btn.textContent = 'Disconnect';
     btn.disabled = false;
@@ -902,6 +1228,7 @@ async function connect() {
     sysCtrlChar = null;
     commandsChar = null;
     ros2Char = null;
+    wifiChar = null;
     if (cmdPollTimer) { clearInterval(cmdPollTimer); cmdPollTimer = null; }
   }
 }
@@ -925,6 +1252,7 @@ function onDisconnected() {
   commandsChar = null;
   ros2Char = null;
   ros2Data = null;
+  wifiChar = null;
   if (cmdPollTimer) { clearInterval(cmdPollTimer); cmdPollTimer = null; }
   // Reset Services card
   document.getElementById('svc-list').innerHTML =
@@ -941,6 +1269,14 @@ function onDisconnected() {
   // Reset ROS2 card
   document.getElementById('ros2-content').innerHTML =
     '<div class="svc-empty">接続後に表示されます</div>';
+  // Reset WiFi card
+  document.getElementById('wifi-current-info').textContent = '';
+  document.getElementById('wifi-saved-info').textContent = '';
+  document.getElementById('wifi-net-list').innerHTML =
+    '<div class="wifi-empty">接続後にスキャンしてください</div>';
+  document.getElementById('wifi-connect-form').style.display = 'none';
+  document.getElementById('wifi-status').textContent = '';
+  document.getElementById('btn-wifi-scan').disabled = true;
 }
 
 btn.addEventListener('click', () => {
