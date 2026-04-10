@@ -546,6 +546,118 @@ void RpiMonitorGui::drawCommands(const RpiBleClient& ble, int selectedIndex, boo
     }
 }
 
+// ---- ROS2 Screen ----
+
+void RpiMonitorGui::drawRos2(const RpiBleClient& ble, int tab, int scrollOffset)
+{
+    _drawTitle("ROS2");
+
+    auto* c = _hal->canvas;
+    auto& ros2 = ble.getRos2Info();
+
+    if (!ros2.active) {
+        _drawCenteredText(100, "ROS2 not detected", COL_TEXT_DIM, &fonts::Font2);
+        _drawCenteredText(130, "on this host", COL_TEXT_DIM, &fonts::Font0);
+        return;
+    }
+
+    // Tab indicator bar
+    int tabY = CONTENT_START_Y - 2;
+    int tabW = 80;
+    int tabGap = 10;
+    int tabStartX = (DISP_W - tabW * 2 - tabGap) / 2;
+
+    const char* tabLabels[] = {"Nodes", "Topics"};
+    for (int i = 0; i < 2; i++) {
+        int tx = tabStartX + i * (tabW + tabGap);
+        bool active = (i == tab);
+
+        if (active) {
+            c->fillRoundRect(tx, tabY, tabW, 16, 4, COL_ACCENT);
+            c->setTextColor(COL_BG);
+        } else {
+            c->drawRoundRect(tx, tabY, tabW, 16, 4, COL_TEXT_DIM);
+            c->setTextColor(COL_TEXT_DIM);
+        }
+        c->setFont(&fonts::Font0);
+        int lw = c->textWidth(tabLabels[i]);
+        c->setCursor(tx + (tabW - lw) / 2, tabY + 3);
+        c->print(tabLabels[i]);
+    }
+
+    // Count label
+    int countY = tabY + 20;
+    char countBuf[32];
+    const std::vector<std::string>& items = (tab == 0) ? ros2.nodes : ros2.topics;
+    int total = (tab == 0) ? ros2.nodeTotal : ros2.topicTotal;
+    int shown = (int)items.size();
+    snprintf(countBuf, sizeof(countBuf), "%d/%d %s",
+             shown, total, (tab == 0) ? "nodes" : "topics");
+    c->setFont(&fonts::Font0);
+    c->setTextColor(COL_TEXT_DIM);
+    int cw = c->textWidth(countBuf);
+    c->setCursor((DISP_W - cw) / 2, countY);
+    c->print(countBuf);
+
+    // Scrollable list
+    int listY = countY + 16;
+    int lineH = 14;
+    int maxVisible = 7;
+    int itemCount = (int)items.size();
+
+    // Clamp scrollOffset
+    if (scrollOffset > itemCount - maxVisible) {
+        scrollOffset = itemCount - maxVisible;
+    }
+    if (scrollOffset < 0) scrollOffset = 0;
+
+    c->setFont(&fonts::Font0);
+    for (int i = 0; i < maxVisible && (scrollOffset + i) < itemCount; i++) {
+        int idx = scrollOffset + i;
+        int rowY = listY + i * lineH;
+
+        c->setTextColor(COL_TEXT);
+
+        // Truncate long names to fit display
+        const std::string& name = items[idx];
+        const char* nameStr = name.c_str();
+        int maxTextW = TEXT_RIGHT - TEXT_LEFT;
+
+        if (c->textWidth(nameStr) > maxTextW) {
+            // Truncate with ellipsis
+            char truncBuf[64];
+            int len = (int)name.length();
+            if (len > 60) len = 60;
+            strncpy(truncBuf, nameStr, len);
+            truncBuf[len] = '\0';
+            while (len > 3 && c->textWidth(truncBuf) > maxTextW) {
+                len--;
+                truncBuf[len] = '\0';
+            }
+            if (len > 3) {
+                truncBuf[len - 1] = '.';
+                truncBuf[len - 2] = '.';
+            }
+            c->setCursor(TEXT_LEFT, rowY);
+            c->print(truncBuf);
+        } else {
+            c->setCursor(TEXT_LEFT, rowY);
+            c->print(nameStr);
+        }
+    }
+
+    // Scroll indicators
+    if (scrollOffset > 0) {
+        c->fillTriangle(CENTER_X - 5, listY - 8, CENTER_X + 5, listY - 8,
+                        CENTER_X, listY - 12, COL_ACCENT);
+    }
+    if (scrollOffset + maxVisible < itemCount) {
+        int bottomY = listY + maxVisible * lineH + 2;
+        c->fillTriangle(CENTER_X - 5, bottomY, CENTER_X + 5, bottomY,
+                        CENTER_X, bottomY + 4, COL_ACCENT);
+    }
+}
+
 // ---- QR Code Screen ----
 
 #include <lgfx/utility/lgfx_qrcode.h>

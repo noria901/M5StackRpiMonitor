@@ -130,6 +130,9 @@ void RpiMonitor::onRunning()
             case Screen::COMMANDS:
                 _gui.drawCommands(_ble, _cmdSelectedIndex, _cmdConfirmMode);
                 break;
+            case Screen::ROS2:
+                _gui.drawRos2(_ble, _ros2Tab, _ros2ScrollOffset);
+                break;
             case Screen::QR_CODE:
                 _gui.drawQrCode(_ble);
                 break;
@@ -260,7 +263,8 @@ bool RpiMonitor::_isListScreen() const
 {
     return _currentScreen == Screen::SERVICES ||
            _currentScreen == Screen::POWER_MENU ||
-           _currentScreen == Screen::COMMANDS;
+           _currentScreen == Screen::COMMANDS ||
+           _currentScreen == Screen::ROS2;
 }
 
 // ============================================================
@@ -279,6 +283,11 @@ void RpiMonitor::_touchAction()
             break;
         case Screen::COMMANDS:
             _commandsAction();
+            break;
+        case Screen::ROS2:
+            // Toggle between Nodes and Topics tabs
+            _ros2Tab = (_ros2Tab + 1) % 2;
+            _ros2ScrollOffset = 0;
             break;
         case Screen::SETTINGS:
             _settingsAction();
@@ -309,6 +318,9 @@ void RpiMonitor::_touchScrollUp()
             if (_cmdConfirmMode) _cmdConfirmMode = false;
             else if (_cmdSelectedIndex > 0) _cmdSelectedIndex--;
             break;
+        case Screen::ROS2:
+            if (_ros2ScrollOffset > 0) _ros2ScrollOffset--;
+            break;
         default:
             break;
     }
@@ -330,6 +342,12 @@ void RpiMonitor::_touchScrollDown()
             if (!_cmdConfirmMode && _cmdSelectedIndex < _ble.getCommandCount() - 1)
                 _cmdSelectedIndex++;
             break;
+        case Screen::ROS2: {
+            auto& ros2 = _ble.getRos2Info();
+            int itemCount = (_ros2Tab == 0) ? (int)ros2.nodes.size() : (int)ros2.topics.size();
+            if (_ros2ScrollOffset < itemCount - 1) _ros2ScrollOffset++;
+            break;
+        }
         default:
             break;
     }

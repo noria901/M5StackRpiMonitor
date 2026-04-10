@@ -236,6 +236,45 @@
     .cmd-action:disabled { opacity: 0.3; cursor: not-allowed; }
     .cmd-empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
 
+    /* ROS2 */
+    .ros2-inactive { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
+    .ros2-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .ros2-tab {
+      flex: 1;
+      padding: 0.35rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: background .15s, color .15s;
+    }
+    .ros2-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    .ros2-tab:hover:not(.active) { border-color: var(--muted); }
+    .ros2-count { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .ros2-item {
+      font-size: 0.85rem;
+      padding: 0.3rem 0;
+      border-bottom: 1px solid var(--border);
+      word-break: break-all;
+    }
+    .ros2-item:last-child { border-bottom: none; }
+    .ros2-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-right: 0.4rem;
+      vertical-align: middle;
+    }
+
     /* WiFi Config */
     .wifi-controls {
       display: flex;
@@ -501,6 +540,14 @@
     </div>
   </div>
 
+  <!-- ROS2 -->
+  <div class="card" id="card-ros2">
+    <div class="card-title">ROS2</div>
+    <div id="ros2-content">
+      <div class="svc-empty">接続後に表示されます</div>
+    </div>
+  </div>
+
   <!-- WiFi Config -->
   <div class="card" id="card-wifi">
     <div class="card-title">WiFi 設定</div>
@@ -543,7 +590,8 @@ const CHAR_SYSTEM   = '12345678-1234-5678-1234-56789abcdef5';
 const CHAR_SERVICES = '12345678-1234-5678-1234-56789abcdef7';
 const CHAR_SYSCTL   = '12345678-1234-5678-1234-56789abcdef8';
 const CHAR_COMMANDS = '12345678-1234-5678-1234-56789abcdef9';
-const CHAR_WIFI    = '12345678-1234-5678-1234-56789abcdefa';
+const CHAR_ROS2     = '12345678-1234-5678-1234-56789abcdefa';
+const CHAR_WIFI    = '12345678-1234-5678-1234-56789abcdefb';
 
 // ---- State ----------------------------------------------------------------
 let device = null;
@@ -551,6 +599,7 @@ let server = null;
 let servicesChar = null;
 let sysCtrlChar  = null;
 let commandsChar = null;
+let ros2Char = null;
 let wifiChar     = null;
 let cmdPollTimer = null;
 
@@ -849,6 +898,58 @@ async function onCommandAction(e) {
   }
 }
 
+// ---- ROS2 handler ---------------------------------------------------------
+let ros2CurrentTab = 'nodes';
+let ros2Data = null;
+
+function onRos2(event) {
+  const d = decode(event.target.value);
+  ros2Data = d;
+  renderRos2();
+  updateTimestamp();
+}
+
+function renderRos2() {
+  const container = document.getElementById('ros2-content');
+  if (!ros2Data || !ros2Data.active) {
+    container.innerHTML = '<div class="ros2-inactive">ROS2 は検出されませんでした</div>';
+    return;
+  }
+  const items = ros2CurrentTab === 'nodes' ? (ros2Data.nodes || []) : (ros2Data.topics || []);
+  const total = ros2CurrentTab === 'nodes' ? (ros2Data.n_total || 0) : (ros2Data.t_total || 0);
+  const label = ros2CurrentTab === 'nodes' ? 'nodes' : 'topics';
+
+  let html = `<div class="ros2-tabs">
+    <button class="ros2-tab${ros2CurrentTab === 'nodes' ? ' active' : ''}" data-tab="nodes">Nodes</button>
+    <button class="ros2-tab${ros2CurrentTab === 'topics' ? ' active' : ''}" data-tab="topics">Topics</button>
+  </div>`;
+  html += `<div class="ros2-count">${items.length} / ${total} ${label}</div>`;
+  if (items.length === 0) {
+    html += `<div class="ros2-inactive">No ${label}</div>`;
+  } else {
+    html += items.map(name =>
+      `<div class="ros2-item"><span class="ros2-dot"></span>${escapeHtml(name)}</div>`
+    ).join('');
+  }
+  container.innerHTML = html;
+  container.querySelectorAll('.ros2-tab').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      ros2CurrentTab = e.currentTarget.dataset.tab;
+      renderRos2();
+    });
+  });
+}
+
+async function pollRos2() {
+  if (!ros2Char) return;
+  try {
+    const value = await ros2Char.readValue();
+    onRos2({ target: { value } });
+  } catch (err) {
+    // ignore
+  }
+}
+
 async function pollCommands() {
   if (!commandsChar) return;
   try {
@@ -1090,7 +1191,17 @@ async function connect() {
     commandsChar = await service.getCharacteristic(CHAR_COMMANDS);
     const cmdValue = await commandsChar.readValue();
     onCommands({ target: { value: cmdValue } });
-    cmdPollTimer = setInterval(pollCommands, 3000);
+    cmdPollTimer = setInterval(() => { pollCommands(); pollRos2(); }, 3000);
+
+    // ROS2 (read-only; poll)
+    try {
+      ros2Char = await service.getCharacteristic(CHAR_ROS2);
+      const ros2Value = await ros2Char.readValue();
+      onRos2({ target: { value: ros2Value } });
+    } catch (err) {
+      console.log('ROS2 characteristic not available:', err.message);
+      ros2Char = null;
+    }
 
     // WiFi Config (read/write; store ref)
     try {
@@ -1116,6 +1227,7 @@ async function connect() {
     servicesChar = null;
     sysCtrlChar = null;
     commandsChar = null;
+    ros2Char = null;
     wifiChar = null;
     if (cmdPollTimer) { clearInterval(cmdPollTimer); cmdPollTimer = null; }
   }
@@ -1138,6 +1250,8 @@ function onDisconnected() {
   servicesChar = null;
   sysCtrlChar = null;
   commandsChar = null;
+  ros2Char = null;
+  ros2Data = null;
   wifiChar = null;
   if (cmdPollTimer) { clearInterval(cmdPollTimer); cmdPollTimer = null; }
   // Reset Services card
@@ -1152,6 +1266,9 @@ function onDisconnected() {
   // Reset Commands card
   document.getElementById('cmd-list').innerHTML =
     '<div class="cmd-empty">接続後に表示されます</div>';
+  // Reset ROS2 card
+  document.getElementById('ros2-content').innerHTML =
+    '<div class="svc-empty">接続後に表示されます</div>';
   // Reset WiFi card
   document.getElementById('wifi-current-info').textContent = '';
   document.getElementById('wifi-saved-info').textContent = '';

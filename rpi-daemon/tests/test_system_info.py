@@ -1,6 +1,7 @@
 """Tests for system_info and ble_server modules."""
 
 import json
+import subprocess
 from unittest.mock import patch, mock_open, MagicMock
 
 import pytest
@@ -404,3 +405,161 @@ class TestCommandRunner:
         assert "no such cmd" in result["message"]
         status = runner.get_status()
         assert status[0]["state"] == "error"
+
+
+class TestGetRos2Info:
+    """Tests for get_ros2_info() ROS2 monitoring."""
+
+    def _make_run_result(self, stdout="", returncode=0):
+        mock = MagicMock()
+        mock.stdout = stdout
+        mock.returncode = returncode
+        return mock
+
+    def test_ros2_available(self):
+        """When ROS2 is available, returns active=True with nodes and topics."""
+        node_output = "/node_a\n/node_b\n/node_c\n"
+        topic_output = "/topic_x\n/topic_y\n"
+
+        def mock_run(cmd, **kwargs):
+            shell_cmd = cmd[2]  # bash -c "source ... && ros2 ..."
+            if "node list" in shell_cmd:
+                return self._make_run_result(stdout=node_output)
+            elif "topic list" in shell_cmd:
+                return self._make_run_result(stdout=topic_output)
+            return self._make_run_result()
+
+        with patch("os.path.isfile", return_value=True):
+            with patch("subprocess.run", side_effect=mock_run):
+                result = system_info.get_ros2_info("/opt/ros/humble/setup.bash")
+
+        assert result["active"] is True
+        assert result["nodes"] == ["/node_a", "/node_b", "/node_c"]
+        assert result["topics"] == ["/topic_x", "/topic_y"]
+        assert result["n_total"] == 3
+        assert result["t_total"] == 2
+
+    def test_ros2_not_installed(self):
+        """When ros2 command raises FileNotFoundError, returns active=False."""
+        with patch("os.path.isfile", return_value=True):
+            with patch("subprocess.run", side_effect=FileNotFoundError):
+                result = system_info.get_ros2_info("/opt/ros/humble/setup.bash")
+
+        assert result["active"] is False
+        assert result["nodes"] == []
+        assert result["topics"] == []
+        assert result["n_total"] == 0
+        assert result["t_total"] == 0
+
+    def test_ros2_command_timeout(self):
+        """When ros2 command times out, returns active=False."""
+        with patch("os.path.isfile", return_value=True):
+            with patch(
+                "subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="ros2", timeout=3),
+            ):
+                result = system_info.get_ros2_info("/opt/ros/humble/setup.bash")
+
+        assert result["active"] is False
+        assert result["nodes"] == []
+        assert result["topics"] == []
+
+    def test_truncation_to_max_10(self):
+        """When more than 10 nodes/topics, lists are truncated but totals show real counts."""
+        nodes = [f"/node_{i}" for i in range(25)]
+        topics = [f"/topic_{i}" for i in range(15)]
+
+        def mock_run(cmd, **kwargs):
+            shell_cmd = cmd[2]
+            if "node list" in shell_cmd:
+                return self._make_run_result(stdout="\n".join(nodes) + "\n")
+            elif "topic list" in shell_cmd:
+                return self._make_run_result(stdout="\n".join(topics) + "\n")
+            return self._make_run_result()
+
+        with patch("os.path.isfile", return_value=True):
+            with patch("subprocess.run", side_effect=mock_run):
+                result = system_info.get_ros2_info("/opt/ros/humble/setup.bash")
+
+        assert result["active"] is True
+        assert len(result["nodes"]) <= 10
+        assert len(result["topics"]) <= 10
+        assert result["n_total"] == 25
+        assert result["t_total"] == 15
+
+    def test_512_byte_limit(self):
+        """With very long names, JSON output stays under 512 bytes."""
+        long_prefix = "a" * 80
+        nodes = [f"/{long_prefix}_node_{i}" for i in range(15)]
+        topics = [f"/{long_prefix}_topic_{i}" for i in range(15)]
+
+        def mock_run(cmd, **kwargs):
+            shell_cmd = cmd[2]
+            if "node list" in shell_cmd:
+                return self._make_run_result(stdout="\n".join(nodes) + "\n")
+            elif "topic list" in shell_cmd:
+                return self._make_run_result(stdout="\n".join(topics) + "\n")
+            return self._make_run_result()
+
+        with patch("os.path.isfile", return_value=True):
+            with patch("subprocess.run", side_effect=mock_run):
+                result = system_info.get_ros2_info("/opt/ros/humble/setup.bash")
+
+        result_json = json.dumps(result)
+        assert len(result_json) <= 512
+        assert result["active"] is True
+        # Lists were shrunk to fit
+        assert result["n_total"] == 15
+        assert result["t_total"] == 15
+
+    def test_setup_script_not_exists(self):
+        """When setup_script file doesn't exist, returns empty/inactive result."""
+        with patch("os.path.isfile", return_value=False):
+            result = system_info.get_ros2_info("/nonexistent/setup.bash")
+
+        assert result["active"] is False
+        assert result["nodes"] == []
+        assert result["topics"] == []
+        assert result["n_total"] == 0
+        assert result["t_total"] == 0
+
+    def test_custom_setup_script(self):
+        """Custom setup_script path is passed to the subprocess command."""
+        custom_path = "/opt/ros/iron/setup.bash"
+
+        captured_cmds = []
+
+        def mock_run(cmd, **kwargs):
+            captured_cmds.append(cmd[2])
+            return self._make_run_result(stdout="/my_node\n")
+
+        with patch("os.path.isfile", return_value=True):
+            with patch("subprocess.run", side_effect=mock_run):
+                result = system_info.get_ros2_info(custom_path)
+
+        # Verify the custom path appears in the shell commands
+        assert len(captured_cmds) == 2
+        for shell_cmd in captured_cmds:
+            assert custom_path in shell_cmd
+
+    def test_empty_output_returns_inactive(self):
+        """When both node list and topic list are empty, returns active=False."""
+        def mock_run(cmd, **kwargs):
+            return self._make_run_result(stdout="")
+
+        with patch("os.path.isfile", return_value=True):
+            with patch("subprocess.run", side_effect=mock_run):
+                result = system_info.get_ros2_info("/opt/ros/humble/setup.bash")
+
+        assert result["active"] is False
+
+    def test_nonzero_return_code(self):
+        """When ros2 commands return non-zero, treats as empty lists."""
+        def mock_run(cmd, **kwargs):
+            return self._make_run_result(stdout="some output", returncode=1)
+
+        with patch("os.path.isfile", return_value=True):
+            with patch("subprocess.run", side_effect=mock_run):
+                result = system_info.get_ros2_info("/opt/ros/humble/setup.bash")
+
+        assert result["active"] is False

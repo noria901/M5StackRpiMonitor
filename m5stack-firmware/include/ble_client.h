@@ -63,6 +63,14 @@ struct CommandInfo {
     int exitCode = -1;
 };
 
+struct Ros2Info {
+    std::vector<String> nodes;
+    std::vector<String> topics;
+    int nodeTotal = 0;
+    int topicTotal = 0;
+    bool active = false;
+};
+
 class BLEMonitorClient {
 public:
     void init();
@@ -92,6 +100,7 @@ public:
     StorageInfo getStorageInfo();
     NetworkInfo getNetworkInfo();
     SystemInfo getSystemInfo();
+    Ros2Info getRos2Info();
 
     String getServerName();
     unsigned long getLastDataMillis();
@@ -112,6 +121,7 @@ private:
     SystemInfo systemInfo;
     std::vector<ServiceInfo> services;
     std::vector<CommandInfo> commands;
+    Ros2Info ros2Info;
 
     String serverName = "";
     std::vector<BLEAdvertisedDevice> foundDevices;
@@ -127,5 +137,6 @@ private:
     void parseSystemInfo(const String& json);
     void parseServicesInfo(const String& json);
     void parseCommandsInfo(const String& json);
+    void parseRos2Info(const String& json);
     bool writeCharacteristic(const char* uuid, const String& data);
 };

@@ -15,6 +15,7 @@ enum class Screen {
     SERVICES,
     POWER_MENU,
     COMMANDS,
+    ROS2,
     QR_CODE,
     SETTINGS,
     REGISTRATION,
@@ -36,6 +37,8 @@ public:
     void powerBtnC();
     void commandsBtnA();
     void commandsBtnC(int commandCount);
+    void ros2BtnA();
+    void ros2BtnC();
     void setNeedsRedraw();
     Screen getCurrentScreen();
 
@@ -69,6 +72,10 @@ private:
     int cmdSelectedIndex = 0;
     bool cmdConfirmMode = false;
 
+    // ROS2 screen state
+    int ros2SelectedTab = 0;    // 0=Nodes, 1=Topics
+    int ros2ScrollOffset = 0;
+
     // Settings
     bool soundEnabled = true;
     int settingsSelection = 0;
@@ -95,6 +102,7 @@ private:
     void drawServices(BLEMonitorClient& ble);
     void drawPowerMenu(BLEMonitorClient& ble);
     void drawCommands(BLEMonitorClient& ble);
+    void drawRos2(BLEMonitorClient& ble);
     void drawQrCodeScreen(BLEMonitorClient& ble);
     void drawSettings();
     void drawDisconnected(BLEMonitorClient& ble);

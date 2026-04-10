@@ -11,10 +11,13 @@
 #define CHAR_SERVICES_UUID     "12345678-1234-5678-1234-56789abcdef7"
 #define CHAR_SYSTEM_CTRL_UUID  "12345678-1234-5678-1234-56789abcdef8"
 #define CHAR_COMMANDS_UUID     "12345678-1234-5678-1234-56789abcdef9"
+#define CHAR_ROS2_UUID         "12345678-1234-5678-1234-56789abcdefa"
 
 // Services screen
 #define MAX_SERVICES           8
 #define MAX_COMMANDS           8
+#define MAX_ROS2_NODES         10
+#define MAX_ROS2_TOPICS        10
 
 // BLE Settings
 #define BLE_DEVICE_NAME        "M5Stack-RpiMon"
