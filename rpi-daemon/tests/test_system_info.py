@@ -563,3 +563,367 @@ class TestGetRos2Info:
                 result = system_info.get_ros2_info("/opt/ros/humble/setup.bash")
 
         assert result["active"] is False
+
+
+class TestScanWifiNetworks:
+    def test_scan_returns_networks(self):
+        """Scan parses nmcli output correctly."""
+        nmcli_output = "HomeWifi:85:WPA2\nOfficeNet:62:WPA2\nOpenNet:30:\n"
+        call_count = 0
+
+        def mock_run(cmd, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            m = MagicMock()
+            if "rescan" in cmd:
+                m.returncode = 0
+                m.stdout = ""
+            else:
+                m.returncode = 0
+                m.stdout = nmcli_output
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.scan_wifi_networks()
+
+        assert len(result) == 3
+        assert result[0]["ssid"] == "HomeWifi"
+        assert result[0]["signal"] == 85
+        assert result[0]["security"] == "WPA2"
+        assert result[2]["ssid"] == "OpenNet"
+        assert result[2]["security"] == "Open"
+
+    def test_scan_sorts_by_signal(self):
+        """Networks are sorted by signal strength descending."""
+        nmcli_output = "Weak:20:WPA2\nStrong:90:WPA2\nMedium:50:WPA2\n"
+
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = nmcli_output if "list" in cmd else ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.scan_wifi_networks()
+
+        assert result[0]["ssid"] == "Strong"
+        assert result[1]["ssid"] == "Medium"
+        assert result[2]["ssid"] == "Weak"
+
+    def test_scan_deduplicates_ssids(self):
+        """Duplicate SSIDs are removed."""
+        nmcli_output = "MyNet:80:WPA2\nMyNet:70:WPA2\nOther:60:WPA2\n"
+
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = nmcli_output if "list" in cmd else ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.scan_wifi_networks()
+
+        ssids = [n["ssid"] for n in result]
+        assert ssids.count("MyNet") == 1
+
+    def test_scan_empty_result(self):
+        """Empty scan returns empty list."""
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.scan_wifi_networks()
+
+        assert result == []
+
+    def test_scan_handles_nmcli_failure(self):
+        """nmcli failure returns empty list."""
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 1
+            m.stdout = ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.scan_wifi_networks()
+
+        assert result == []
+
+
+class TestGetSavedWifiConnections:
+    def test_returns_wireless_connections(self):
+        nmcli_output = "HomeWifi:802-11-wireless\nEth0:802-3-ethernet\nOffice:802-11-wireless\n"
+
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = nmcli_output
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.get_saved_wifi_connections()
+
+        assert result == ["HomeWifi", "Office"]
+
+    def test_returns_empty_on_no_wireless(self):
+        nmcli_output = "Eth0:802-3-ethernet\n"
+
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = nmcli_output
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.get_saved_wifi_connections()
+
+        assert result == []
+
+    def test_handles_exception(self):
+        with patch("subprocess.run", side_effect=Exception("fail")):
+            result = system_info.get_saved_wifi_connections()
+
+        assert result == []
+
+
+class TestWifiConnect:
+    def test_connect_with_password(self):
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stderr = ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            with patch("system_info.get_saved_wifi_connections", return_value=[]):
+                result = system_info.wifi_connect("TestNet", "password123")
+
+        assert result["status"] == "ok"
+
+    def test_connect_saved_network_without_password(self):
+        """Activates existing profile when no password given."""
+        calls = []
+
+        def mock_run(cmd, **kwargs):
+            calls.append(cmd)
+            m = MagicMock()
+            m.returncode = 0
+            m.stderr = ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            with patch("system_info.get_saved_wifi_connections", return_value=["SavedNet"]):
+                result = system_info.wifi_connect("SavedNet", "")
+
+        assert result["status"] == "ok"
+        # Should use "nmcli con up" for saved profiles
+        assert any("con" in c and "up" in c for c in calls)
+
+    def test_connect_empty_ssid(self):
+        result = system_info.wifi_connect("")
+        assert result["status"] == "error"
+
+    def test_connect_failure(self):
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 1
+            m.stderr = "No network found"
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            with patch("system_info.get_saved_wifi_connections", return_value=[]):
+                result = system_info.wifi_connect("BadNet", "pass")
+
+        assert result["status"] == "error"
+        assert "No network found" in result["message"]
+
+    def test_connect_timeout(self):
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("nmcli", 30)):
+            with patch("system_info.get_saved_wifi_connections", return_value=[]):
+                result = system_info.wifi_connect("SlowNet", "pass")
+
+        assert result["status"] == "error"
+        assert "timed out" in result["message"]
+
+
+class TestWifiDisconnect:
+    def test_disconnect_success(self):
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stderr = ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.wifi_disconnect()
+
+        assert result["status"] == "ok"
+
+    def test_disconnect_failure(self):
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 1
+            m.stderr = "Device not managed"
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.wifi_disconnect()
+
+        assert result["status"] == "error"
+
+
+class TestWifiForget:
+    def test_forget_success(self):
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stderr = ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.wifi_forget("OldNet")
+
+        assert result["status"] == "ok"
+
+    def test_forget_empty_ssid(self):
+        result = system_info.wifi_forget("")
+        assert result["status"] == "error"
+
+    def test_forget_failure(self):
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 1
+            m.stderr = "Connection 'OldNet' not found"
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.wifi_forget("OldNet")
+
+        assert result["status"] == "error"
+
+
+class TestGetWifiStatus:
+    def test_returns_current_and_saved(self):
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            if "iwgetid" in cmd:
+                m.stdout = "MyNetwork\n"
+            else:
+                m.stdout = "MyNetwork:802-11-wireless\nWork:802-11-wireless\n"
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.get_wifi_status()
+
+        assert result["current_ssid"] == "MyNetwork"
+        assert "MyNetwork" in result["saved"]
+        assert "Work" in result["saved"]
+
+    def test_not_connected(self):
+        def mock_run(cmd, **kwargs):
+            m = MagicMock()
+            if "iwgetid" in cmd:
+                m.returncode = 1
+                m.stdout = ""
+            else:
+                m.returncode = 0
+                m.stdout = ""
+            return m
+
+        with patch("subprocess.run", side_effect=mock_run):
+            result = system_info.get_wifi_status()
+
+        assert result["current_ssid"] == ""
+        assert result["saved"] == []
+
+
+class TestWifiCharacteristic:
+    """Test WifiCharacteristic BLE integration."""
+
+    @staticmethod
+    def _get_value(char):
+        """Read the internal value of a characteristic (bypasses D-Bus decorator)."""
+        return json.loads(char._value.decode("utf-8"))
+
+    def test_read_returns_status(self):
+        status = {"current_ssid": "Test", "saved": ["Test"]}
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        data = self._get_value(char)
+        assert data["current_ssid"] == "Test"
+
+    def test_write_scan(self):
+        status = {"current_ssid": "Net", "saved": ["Net"]}
+        networks = [{"ssid": "Net", "signal": 80, "security": "WPA2"}]
+
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.scan_wifi_networks", return_value=networks):
+            with patch("ble_server.get_wifi_status", return_value=status):
+                cmd = json.dumps({"action": "scan"}).encode("utf-8")
+                char.WriteValue(list(cmd), {})
+
+        data = self._get_value(char)
+        assert "networks" in data
+        assert len(data["networks"]) == 1
+
+    def test_write_connect(self):
+        status = {"current_ssid": "", "saved": []}
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.wifi_connect", return_value={"status": "ok"}) as mock:
+            cmd = json.dumps({"action": "connect", "ssid": "Net", "password": "pass"}).encode("utf-8")
+            char.WriteValue(list(cmd), {})
+            mock.assert_called_once_with("Net", "pass")
+
+        data = self._get_value(char)
+        assert data["status"] == "ok"
+
+    def test_write_disconnect(self):
+        status = {"current_ssid": "Net", "saved": ["Net"]}
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.wifi_disconnect", return_value={"status": "ok"}) as mock:
+            cmd = json.dumps({"action": "disconnect"}).encode("utf-8")
+            char.WriteValue(list(cmd), {})
+            mock.assert_called_once()
+
+    def test_write_forget(self):
+        status = {"current_ssid": "", "saved": ["OldNet"]}
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.wifi_forget", return_value={"status": "ok"}) as mock:
+            cmd = json.dumps({"action": "forget", "ssid": "OldNet"}).encode("utf-8")
+            char.WriteValue(list(cmd), {})
+            mock.assert_called_once_with("OldNet")
+
+    def test_write_invalid_action(self):
+        status = {"current_ssid": "", "saved": []}
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        cmd = json.dumps({"action": "invalid"}).encode("utf-8")
+        char.WriteValue(list(cmd), {})
+
+        data = self._get_value(char)
+        assert data["status"] == "error"
+
+    def test_write_invalid_json(self):
+        status = {"current_ssid": "", "saved": []}
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        cmd = b"not json"
+        char.WriteValue(list(cmd), {})
+
+        data = self._get_value(char)
+        assert data["status"] == "error"
