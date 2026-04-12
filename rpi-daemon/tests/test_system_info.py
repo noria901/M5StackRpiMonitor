@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import threading
 from unittest.mock import patch, mock_open, MagicMock
 
 import pytest
@@ -842,49 +843,138 @@ class TestGetWifiStatus:
 
 
 class TestWifiCharacteristic:
-    """Test WifiCharacteristic BLE integration."""
+    """Test WifiCharacteristic BLE integration (async state tracking)."""
 
     @staticmethod
     def _get_value(char):
         """Read the internal value of a characteristic (bypasses D-Bus decorator)."""
         return json.loads(char._value.decode("utf-8"))
 
-    def test_read_returns_status(self):
+    @staticmethod
+    def _join_worker(char, timeout=2.0):
+        """Wait for the background worker thread to complete."""
+        if char._worker is not None:
+            char._worker.join(timeout=timeout)
+
+    def test_read_returns_initial_state(self):
         status = {"current_ssid": "Test", "saved": ["Test"]}
         with patch("ble_server.get_wifi_status", return_value=status):
             char = ble_server.WifiCharacteristic("/test/char")
 
         data = self._get_value(char)
         assert data["current_ssid"] == "Test"
+        assert data["saved"] == ["Test"]
+        assert data["state"] == "idle"
+        assert data["networks"] == []
+        assert data["target"] == ""
+        assert "updated_at" in data
 
-    def test_write_scan(self):
+    def test_write_scan_transitions_through_states(self):
+        """scan: write should immediately flip to scanning, then idle after worker."""
         status = {"current_ssid": "Net", "saved": ["Net"]}
         networks = [{"ssid": "Net", "signal": 80, "security": "WPA2"}]
+
+        # Block scan_wifi_networks so we can observe the intermediate state
+        release = threading.Event()
+
+        def slow_scan():
+            release.wait(timeout=2)
+            return networks
 
         with patch("ble_server.get_wifi_status", return_value=status):
             char = ble_server.WifiCharacteristic("/test/char")
 
-        with patch("ble_server.scan_wifi_networks", return_value=networks):
+        with patch("ble_server.scan_wifi_networks", side_effect=slow_scan):
             with patch("ble_server.get_wifi_status", return_value=status):
                 cmd = json.dumps({"action": "scan"}).encode("utf-8")
                 char.WriteValue(list(cmd), {})
 
-        data = self._get_value(char)
-        assert "networks" in data
-        assert len(data["networks"]) == 1
+                # Immediately after WriteValue, state should be "scanning"
+                mid = self._get_value(char)
+                assert mid["state"] == "scanning"
+                assert mid["last_action"] == "scan"
+                assert mid["last_status"] == ""
 
-    def test_write_connect(self):
+                # Let the worker finish
+                release.set()
+                self._join_worker(char)
+
+        final = self._get_value(char)
+        assert final["state"] == "idle"
+        assert final["last_action"] == "scan"
+        assert final["last_status"] == "ok"
+        assert len(final["networks"]) == 1
+        assert final["networks"][0]["ssid"] == "Net"
+
+    def test_write_connect_transitions_through_states(self):
+        status = {"current_ssid": "", "saved": []}
+        release = threading.Event()
+
+        def slow_connect(ssid, password):
+            release.wait(timeout=2)
+            return {"status": "ok"}
+
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.wifi_connect", side_effect=slow_connect) as mock:
+            with patch(
+                "ble_server.get_wifi_status",
+                return_value={"current_ssid": "Net", "saved": ["Net"]},
+            ):
+                cmd = json.dumps(
+                    {"action": "connect", "ssid": "Net", "password": "pass"}
+                ).encode("utf-8")
+                char.WriteValue(list(cmd), {})
+
+                mid = self._get_value(char)
+                assert mid["state"] == "connecting"
+                assert mid["target"] == "Net"
+
+                release.set()
+                self._join_worker(char)
+                mock.assert_called_once_with("Net", "pass")
+
+        final = self._get_value(char)
+        assert final["state"] == "idle"
+        assert final["last_action"] == "connect"
+        assert final["last_status"] == "ok"
+        assert final["current_ssid"] == "Net"
+        assert final["target"] == ""
+
+    def test_write_connect_failure(self):
         status = {"current_ssid": "", "saved": []}
         with patch("ble_server.get_wifi_status", return_value=status):
             char = ble_server.WifiCharacteristic("/test/char")
 
-        with patch("ble_server.wifi_connect", return_value={"status": "ok"}) as mock:
-            cmd = json.dumps({"action": "connect", "ssid": "Net", "password": "pass"}).encode("utf-8")
+        err_result = {"status": "error", "message": "wrong password"}
+        with patch("ble_server.wifi_connect", return_value=err_result):
+            with patch("ble_server.get_wifi_status", return_value=status):
+                cmd = json.dumps(
+                    {"action": "connect", "ssid": "Net", "password": "bad"}
+                ).encode("utf-8")
+                char.WriteValue(list(cmd), {})
+                self._join_worker(char)
+
+        final = self._get_value(char)
+        assert final["state"] == "idle"
+        assert final["last_status"] == "error"
+        assert "wrong password" in final["last_message"]
+
+    def test_write_connect_missing_ssid(self):
+        status = {"current_ssid": "", "saved": []}
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.wifi_connect") as mock:
+            cmd = json.dumps({"action": "connect", "ssid": ""}).encode("utf-8")
             char.WriteValue(list(cmd), {})
-            mock.assert_called_once_with("Net", "pass")
+            mock.assert_not_called()
 
         data = self._get_value(char)
-        assert data["status"] == "ok"
+        assert data["state"] == "idle"
+        assert data["last_status"] == "error"
+        assert "SSID" in data["last_message"]
 
     def test_write_disconnect(self):
         status = {"current_ssid": "Net", "saved": ["Net"]}
@@ -892,9 +982,19 @@ class TestWifiCharacteristic:
             char = ble_server.WifiCharacteristic("/test/char")
 
         with patch("ble_server.wifi_disconnect", return_value={"status": "ok"}) as mock:
-            cmd = json.dumps({"action": "disconnect"}).encode("utf-8")
-            char.WriteValue(list(cmd), {})
-            mock.assert_called_once()
+            with patch(
+                "ble_server.get_wifi_status",
+                return_value={"current_ssid": "", "saved": ["Net"]},
+            ):
+                cmd = json.dumps({"action": "disconnect"}).encode("utf-8")
+                char.WriteValue(list(cmd), {})
+                self._join_worker(char)
+                mock.assert_called_once()
+
+        final = self._get_value(char)
+        assert final["state"] == "idle"
+        assert final["last_action"] == "disconnect"
+        assert final["last_status"] == "ok"
 
     def test_write_forget(self):
         status = {"current_ssid": "", "saved": ["OldNet"]}
@@ -902,9 +1002,79 @@ class TestWifiCharacteristic:
             char = ble_server.WifiCharacteristic("/test/char")
 
         with patch("ble_server.wifi_forget", return_value={"status": "ok"}) as mock:
-            cmd = json.dumps({"action": "forget", "ssid": "OldNet"}).encode("utf-8")
+            with patch(
+                "ble_server.get_wifi_status",
+                return_value={"current_ssid": "", "saved": []},
+            ):
+                cmd = json.dumps(
+                    {"action": "forget", "ssid": "OldNet"}
+                ).encode("utf-8")
+                char.WriteValue(list(cmd), {})
+                self._join_worker(char)
+                mock.assert_called_once_with("OldNet")
+
+        final = self._get_value(char)
+        assert final["state"] == "idle"
+        assert final["last_action"] == "forget"
+        assert final["last_status"] == "ok"
+        assert final["saved"] == []
+
+    def test_write_forget_missing_ssid(self):
+        status = {"current_ssid": "", "saved": ["OldNet"]}
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.wifi_forget") as mock:
+            cmd = json.dumps({"action": "forget", "ssid": ""}).encode("utf-8")
             char.WriteValue(list(cmd), {})
-            mock.assert_called_once_with("OldNet")
+            mock.assert_not_called()
+
+        data = self._get_value(char)
+        assert data["state"] == "idle"
+        assert data["last_status"] == "error"
+
+    def test_write_busy_rejects_second_action(self):
+        """A second WriteValue while busy should not launch a new worker."""
+        status = {"current_ssid": "", "saved": []}
+        release = threading.Event()
+
+        def slow_scan():
+            release.wait(timeout=2)
+            return []
+
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.scan_wifi_networks", side_effect=slow_scan):
+            with patch("ble_server.wifi_connect") as connect_mock:
+                with patch("ble_server.get_wifi_status", return_value=status):
+                    # First: kick off scan (will block until release)
+                    char.WriteValue(
+                        list(json.dumps({"action": "scan"}).encode("utf-8")), {}
+                    )
+                    assert self._get_value(char)["state"] == "scanning"
+
+                    # Second: connect should be rejected with "busy"
+                    char.WriteValue(
+                        list(
+                            json.dumps(
+                                {
+                                    "action": "connect",
+                                    "ssid": "Net",
+                                    "password": "p",
+                                }
+                            ).encode("utf-8")
+                        ),
+                        {},
+                    )
+                    busy = self._get_value(char)
+                    assert busy["state"] == "scanning"
+                    assert busy["last_status"] == "error"
+                    assert "busy" in busy["last_message"]
+                    connect_mock.assert_not_called()
+
+                release.set()
+                self._join_worker(char)
 
     def test_write_invalid_action(self):
         status = {"current_ssid": "", "saved": []}
@@ -915,7 +1085,9 @@ class TestWifiCharacteristic:
         char.WriteValue(list(cmd), {})
 
         data = self._get_value(char)
-        assert data["status"] == "error"
+        assert data["state"] == "idle"
+        assert data["last_status"] == "error"
+        assert "invalid action" in data["last_message"]
 
     def test_write_invalid_json(self):
         status = {"current_ssid": "", "saved": []}
@@ -926,4 +1098,47 @@ class TestWifiCharacteristic:
         char.WriteValue(list(cmd), {})
 
         data = self._get_value(char)
-        assert data["status"] == "error"
+        assert data["state"] == "idle"
+        assert data["last_status"] == "error"
+
+    def test_update_while_idle_refreshes_status(self):
+        status1 = {"current_ssid": "Old", "saved": ["Old"]}
+        status2 = {"current_ssid": "New", "saved": ["New"]}
+
+        with patch("ble_server.get_wifi_status", return_value=status1):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        assert self._get_value(char)["current_ssid"] == "Old"
+
+        with patch("ble_server.get_wifi_status", return_value=status2):
+            char.update()
+
+        assert self._get_value(char)["current_ssid"] == "New"
+
+    def test_update_while_busy_does_not_refresh(self):
+        """update() should leave the value alone while a worker is running."""
+        status = {"current_ssid": "", "saved": []}
+        release = threading.Event()
+
+        def slow_scan():
+            release.wait(timeout=2)
+            return []
+
+        with patch("ble_server.get_wifi_status", return_value=status):
+            char = ble_server.WifiCharacteristic("/test/char")
+
+        with patch("ble_server.scan_wifi_networks", side_effect=slow_scan):
+            with patch("ble_server.get_wifi_status", return_value=status):
+                char.WriteValue(
+                    list(json.dumps({"action": "scan"}).encode("utf-8")), {}
+                )
+                assert self._get_value(char)["state"] == "scanning"
+
+                # Record the value, call update, and ensure it's unchanged
+                before = char._value
+                char.update()
+                after = char._value
+                assert before == after
+
+                release.set()
+                self._join_worker(char)

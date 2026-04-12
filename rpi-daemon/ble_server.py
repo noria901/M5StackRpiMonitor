@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import struct
+import threading
+import time
 from typing import Optional
 
 from dbus_next.aio import MessageBus
@@ -326,14 +328,137 @@ class Ros2Characteristic(Characteristic):
 
 
 class WifiCharacteristic(Characteristic):
-    """BLE characteristic for WiFi STA configuration."""
+    """BLE characteristic for WiFi STA configuration.
+
+    Uses async state tracking: WriteValue kicks off nmcli in a background
+    thread and returns immediately. ReadValue returns the current state so
+    clients can poll for progress.
+
+    Response JSON shape::
+
+        {
+          "state":        "idle" | "scanning" | "connecting" |
+                          "disconnecting" | "forgetting",
+          "target":       <ssid currently being acted on, "" if none>,
+          "current_ssid": <currently-connected SSID, "" if none>,
+          "saved":        [<saved-profile-ssid>, ...],
+          "networks":     [<scan result>, ...],   # empty until first scan
+          "last_action":  "scan"|"connect"|"disconnect"|"forget"|"",
+          "last_status":  "ok"|"error"|"",
+          "last_message": <human-readable>,
+          "updated_at":   <unix-time float>,
+        }
+    """
 
     def __init__(self, path: str):
         super().__init__(CHAR_WIFI_UUID, ["read", "write"], path)
-        self.update()
+        self._state_lock = threading.Lock()
+        self._state = "idle"
+        self._target = ""
+        self._current_ssid = ""
+        self._saved: list[str] = []
+        self._networks: list[dict] = []
+        self._last_action = ""
+        self._last_status = ""
+        self._last_message = ""
+        self._worker: Optional[threading.Thread] = None
+        self._refresh_from_system()
+
+    # ----- state helpers -------------------------------------------------
+
+    def _refresh_from_system(self):
+        """Refresh current_ssid/saved from the host and re-serialize state."""
+        status = get_wifi_status()
+        with self._state_lock:
+            self._current_ssid = status.get("current_ssid", "")
+            self._saved = status.get("saved", [])
+            self._serialize_locked()
+
+    def _serialize_locked(self):
+        """Write the current in-memory state to the BLE value.
+
+        Caller must hold ``self._state_lock``.
+        """
+        payload = {
+            "state": self._state,
+            "target": self._target,
+            "current_ssid": self._current_ssid,
+            "saved": self._saved,
+            "networks": self._networks,
+            "last_action": self._last_action,
+            "last_status": self._last_status,
+            "last_message": self._last_message,
+            "updated_at": time.time(),
+        }
+        self.set_value(json.dumps(payload))
 
     def update(self):
-        self.set_value(json.dumps(get_wifi_status()))
+        """Called periodically by the BLE update loop."""
+        # While an operation is in progress, leave the state alone — the
+        # worker thread owns the value and will publish the result when done.
+        with self._state_lock:
+            if self._state != "idle":
+                return
+        self._refresh_from_system()
+
+    # ----- worker implementations ---------------------------------------
+
+    def _finalize(self, action: str, result: dict, success_msg: str):
+        status = get_wifi_status()
+        with self._state_lock:
+            self._current_ssid = status.get("current_ssid", "")
+            self._saved = status.get("saved", [])
+            self._state = "idle"
+            self._target = ""
+            self._last_action = action
+            self._last_status = result.get("status", "error")
+            if result.get("status") == "ok":
+                self._last_message = success_msg
+            else:
+                self._last_message = result.get("message", "") or "failed"
+            self._serialize_locked()
+
+    def _run_scan(self):
+        try:
+            networks = scan_wifi_networks()
+        except Exception as e:  # defensive: nmcli wrapper shouldn't raise
+            logger.exception("wifi scan failed")
+            with self._state_lock:
+                self._state = "idle"
+                self._last_action = "scan"
+                self._last_status = "error"
+                self._last_message = str(e)
+                self._serialize_locked()
+            return
+        status = get_wifi_status()
+        with self._state_lock:
+            self._networks = networks
+            self._current_ssid = status.get("current_ssid", "")
+            self._saved = status.get("saved", [])
+            self._state = "idle"
+            self._target = ""
+            self._last_action = "scan"
+            self._last_status = "ok"
+            self._last_message = f"{len(networks)} 件のネットワークが見つかりました"
+            self._serialize_locked()
+
+    def _run_connect(self, ssid: str, password: str):
+        result = wifi_connect(ssid, password)
+        self._finalize("connect", result, f"{ssid} に接続しました")
+
+    def _run_disconnect(self):
+        result = wifi_disconnect()
+        self._finalize("disconnect", result, "切断しました")
+
+    def _run_forget(self, ssid: str):
+        result = wifi_forget(ssid)
+        self._finalize("forget", result, f"{ssid} を削除しました")
+
+    def _start_worker(self, target, args=()):
+        self._worker = threading.Thread(target=target, args=args, daemon=True)
+        self._worker.start()
+
+    # ----- D-Bus methods -------------------------------------------------
 
     @method()
     def WriteValue(self, value: "ay", options: "a{sv}"):
@@ -341,32 +466,90 @@ class WifiCharacteristic(Characteristic):
         logger.info(f"WiFi config request: {data}")
         try:
             req = json.loads(data)
-            action = req.get("action", "")
+        except json.JSONDecodeError as e:
+            logger.error(f"WiFi config error: {e}")
+            with self._state_lock:
+                self._last_action = ""
+                self._last_status = "error"
+                self._last_message = f"invalid JSON: {e}"
+                self._serialize_locked()
+            return
+
+        action = req.get("action", "")
+
+        with self._state_lock:
+            if self._state != "idle":
+                # Reject overlapping operations; client should wait and retry.
+                logger.warning(
+                    f"WiFi busy (state={self._state}), ignoring '{action}'"
+                )
+                self._last_action = action
+                self._last_status = "error"
+                self._last_message = f"busy: {self._state}"
+                self._serialize_locked()
+                return
+
             if action == "scan":
-                networks = scan_wifi_networks()
-                status = get_wifi_status()
-                status["networks"] = networks
-                self.set_value(json.dumps(status))
-            elif action == "connect":
+                self._state = "scanning"
+                self._target = ""
+                self._last_action = "scan"
+                self._last_status = ""
+                self._last_message = "スキャン中..."
+                self._networks = []
+                self._serialize_locked()
+                self._start_worker(self._run_scan)
+                return
+
+            if action == "connect":
                 ssid = req.get("ssid", "")
                 password = req.get("password", "")
-                result = wifi_connect(ssid, password)
-                self.set_value(json.dumps(result))
-            elif action == "disconnect":
-                result = wifi_disconnect()
-                self.set_value(json.dumps(result))
-            elif action == "forget":
+                if not ssid:
+                    self._last_action = "connect"
+                    self._last_status = "error"
+                    self._last_message = "SSID is required"
+                    self._serialize_locked()
+                    return
+                self._state = "connecting"
+                self._target = ssid
+                self._last_action = "connect"
+                self._last_status = ""
+                self._last_message = f"{ssid} に接続中..."
+                self._serialize_locked()
+                self._start_worker(self._run_connect, args=(ssid, password))
+                return
+
+            if action == "disconnect":
+                self._state = "disconnecting"
+                self._target = ""
+                self._last_action = "disconnect"
+                self._last_status = ""
+                self._last_message = "切断中..."
+                self._serialize_locked()
+                self._start_worker(self._run_disconnect)
+                return
+
+            if action == "forget":
                 ssid = req.get("ssid", "")
-                result = wifi_forget(ssid)
-                self.set_value(json.dumps(result))
-            else:
-                self.set_value(json.dumps({
-                    "status": "error",
-                    "message": f"invalid action '{action}'",
-                }))
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error(f"WiFi config error: {e}")
-            self.set_value(json.dumps({"status": "error", "message": str(e)}))
+                if not ssid:
+                    self._last_action = "forget"
+                    self._last_status = "error"
+                    self._last_message = "SSID is required"
+                    self._serialize_locked()
+                    return
+                self._state = "forgetting"
+                self._target = ssid
+                self._last_action = "forget"
+                self._last_status = ""
+                self._last_message = f"{ssid} を削除中..."
+                self._serialize_locked()
+                self._start_worker(self._run_forget, args=(ssid,))
+                return
+
+            # Unknown action
+            self._last_action = action
+            self._last_status = "error"
+            self._last_message = f"invalid action '{action}'"
+            self._serialize_locked()
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
